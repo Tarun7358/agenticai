@@ -146,21 +146,38 @@ class JarvisBrain:
         if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
             return "Good day, sir. All systems are operational. How can I assist you?"
 
-        # 2. System / Hardware diagnostics
-        if any(k in q for k in ["system status", "laptop", "battery", "cpu", "ram", "specs", "how are you running", "hardware"]):
+        # 2. Instagram Status (Check BEFORE general hardware words so 'instagram' is not misclassified)
+        if any(k in q for k in ["instagram", "insta", "ig updates", "ig post"]):
+            if HAS_LOCAL_AGENTS:
+                ig_user = getattr(settings, "instagram_username", "")
+                if ig_user and ig_user != "your_instagram_username":
+                    try:
+                        from memory.store import get_db
+                        conn = get_db()
+                        row = conn.execute("SELECT followers, posts FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
+                        conn.close()
+                        if row:
+                            return f"Your Instagram account currently has {row[0]} followers with {row[1]} posts, sir."
+                    except Exception:
+                        pass
+                    return f"Your Instagram monitor is configured for @{ig_user}, sir. All watchers are tracking new engagement."
+            return "Your Instagram monitor is initialized, sir. However, your Instagram username is not configured in settings yet. Once added, I will track your followers and posts."
+
+        # 3. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
+        if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
             cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
             battery = psutil.sensors_battery()
             bat_str = f"battery is at {battery.percent} percent" if battery else "plugged into AC power"
             return f"All systems nominal, sir. Your CPU is at {cpu} percent, memory is at {ram} percent, and the system is {bat_str}."
 
-        # 3. Time / Date
-        if any(k in q for k in ["time", "what time", "date today"]):
+        # 4. Time / Date
+        if re.search(r"\b(time|what time|date today|current date)\b", q):
             now = datetime.datetime.now()
             return f"It is currently {now.strftime('%I:%M %p')} on {now.strftime('%A, %B %d')}."
 
-        # 4. Local Network & Wi-Fi Check
-        if any(k in q for k in ["network", "wifi", "devices", "who is on my wifi", "scan"]):
+        # 5. Local Network & Wi-Fi Check
+        if re.search(r"\b(wifi|network|who is on my wifi|devices on wifi|scan network)\b", q):
             if HAS_LOCAL_AGENTS:
                 try:
                     devices = network_agent.get_all_devices()
@@ -173,9 +190,9 @@ class JarvisBrain:
                     pass
             return "Scanning your local network now, sir. Monitoring all connected Wi-Fi devices."
 
-        # 5. Local File Search
-        if "find" in q or "search" in q or "where is" in q:
-            term = q.replace("find", "").replace("search", "").replace("where is", "").replace("file", "").strip()
+        # 6. Local File Search
+        if any(term in q for term in ["find file", "search file", "where is the file", "find document", "search document"]):
+            term = re.sub(r"\b(find|search|where is|the|file|document)\b", "", q).strip()
             if term and HAS_LOCAL_AGENTS:
                 try:
                     matches = file_agent.search_files(term, limit=1)
@@ -185,17 +202,6 @@ class JarvisBrain:
                     return f"I could not locate any files matching {term} in your indexed folders, sir."
                 except Exception:
                     pass
-
-        # 6. Instagram Status
-        if "instagram" in q:
-            if HAS_LOCAL_AGENTS:
-                try:
-                    summary = instagram_agent.get_analytics_summary()
-                    if summary.get("connected"):
-                        return f"Your Instagram account currently has {summary.get('followers', 0)} followers with {summary.get('posts', 0)} posts."
-                except Exception:
-                    pass
-            return "Your Instagram monitor is initialized, sir. Ready to analyze recent engagement whenever you require."
 
         # 7. Conversational Query via Ollama Local LLM
         try:
@@ -218,6 +224,7 @@ class JarvisBrain:
 
         # Graceful assistant fallback
         return f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active."
+
 
 
 class JarvisApp:
