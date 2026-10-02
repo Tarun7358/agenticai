@@ -1047,24 +1047,21 @@ def main():
     # ─── RAGE Telemetry & Violation Watchdog ──────────────
     def _rage_violation_watcher():
         """
-        Polls RAGE logs and server telemetry every 8s for new security violations
-        (TrustedActorAbuseHandler, rate limits, critical crashes) and speaks alerts.
+        Monitors RAGE security telemetry and speaks aggregated, human-like AI alerts
+        for genuine live runtime incidents only. Ignores ancient logs and coalesces error cascades.
         """
         print("[RAGE WATCHDOG] 🟢 Monitoring RAGE server telemetry & security logs...")
-        time.sleep(6)  # initial warm-up
+        time.sleep(3)
         while True:
             try:
                 from agents import rage_agent
-                new_violations = rage_agent.poll_new_violations()
-                for v in new_violations:
-                    v_type = v.get("type", "Security Event")
-                    v_msg = v.get("message", "")[:75]
-                    alert = f"Sir, RAGE Security alert: detected {v_type}. {v_msg}"
-                    print(f"[RAGE WATCHDOG] ⚠️ {alert}")
-                    app.voice.speak(alert)
+                voice_alert = rage_agent.poll_voice_alert()
+                if voice_alert:
+                    print(f"[RAGE WATCHDOG] ⚠️ {voice_alert}")
+                    app.voice.speak(voice_alert)
             except Exception:
                 pass
-            time.sleep(8)
+            time.sleep(10)
 
     threading.Thread(target=_rage_violation_watcher, daemon=True).start()
     print("[RAGE WATCHDOG] Security violation listener active.")

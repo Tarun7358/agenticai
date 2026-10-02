@@ -265,10 +265,55 @@ def get_server_threat_analysis(guild_id: str = None, guild_name: str = None, que
     )
 
 
-def scan_rage_violations(limit: int = 5) -> List[Dict[str, Any]]:
+# Watchdog priming and cooldown tracking
+_seen_violations = set()
+_is_primed = False
+_last_voice_alert_time = 0.0
+
+
+def sanitize_for_speech(raw: str) -> str:
+    """Strips ISO timestamps, brackets, symbols, emojis, and technical clutter for natural voice synthesis."""
+    if not raw:
+        return ""
+    # Strip emojis and non-ascii characters
+    s = re.sub(r'[^\x00-\x7F]+', ' ', raw)
+    # Strip ISO timestamps like [2026-08-04T16:01:07.371Z] or 2026-08-04 16:01:07
+    s = re.sub(r'\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\]?', '', s)
+    # Strip technical log tags
+    s = re.sub(r'\[(ERROR|WARN|INFO|DEBUG|CONSOLE|UNHANDLED|UNCAUGHT|SECURITY|CRITICAL)\]', '', s, flags=re.IGNORECASE)
+    # Clean up component brackets like [InteractionRouter] -> in InteractionRouter
+    s = re.sub(r'\[([a-zA-Z0-9_-]+)\]', r'in \1,', s)
+    # Clean up command slashes like /addrole -> addrole command
+    s = re.sub(r'\/([a-zA-Z0-9_-]+)', r'\1 command', s)
+    # Clean up repetitive critical prefixes
+    s = re.sub(r'\bCRITICAL:\s*', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bUnhandled\s+Reject(?:ion)?\b', 'unhandled rejection', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bUncaught\s+Exceptio(?:n)?\b', 'uncaught exception', s, flags=re.IGNORECASE)
+    s = re.sub(r'\s+', ' ', s).strip()
+    s = s.strip(':- ,')
+    return s
+
+
+def is_recent_log_line(line: str, max_age_seconds: int = 900) -> bool:
+    """Checks whether a log line is from the last max_age_seconds (default 15 minutes)."""
+    m = re.search(r'(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})', line)
+    if m:
+        try:
+            dt = datetime.fromisoformat(m.group(1))
+            now = datetime.now()
+            # If the log timestamp is older than max_age_seconds, it is historical
+            if (now - dt).total_seconds() > max_age_seconds:
+                return False
+        except Exception:
+            pass
+    return True
+
+
+def scan_rage_violations(limit: int = 5, check_recency: bool = False) -> List[Dict[str, Any]]:
     """
     Scans RAGE log directory or project logs for security violations,
     TrustedActorAbuseHandler alerts, rate limits, and errors.
+    If check_recency is True, skips historical lines older than 15 minutes.
     """
     violations = []
     log_candidates = []
@@ -302,13 +347,17 @@ def scan_rage_violations(limit: int = 5) -> List[Dict[str, Any]]:
             with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
                 for line in reversed(lines[-250:]):
+                    if check_recency and not is_recent_log_line(line):
+                        continue
                     for regex, v_type in violation_patterns:
                         if regex.search(line):
                             line_clean = line.strip()
                             signature = f"{os.path.basename(log_file)}:{line_clean[:80]}"
+                            clean_spoken = sanitize_for_speech(line_clean)
                             violations.append({
                                 "type": v_type,
                                 "message": line_clean[:180],
+                                "clean_message": clean_spoken[:140],
                                 "file": os.path.basename(log_file),
                                 "signature": signature,
                                 "timestamp": datetime.now().strftime("%I:%M %p")
@@ -322,9 +371,9 @@ def scan_rage_violations(limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def poll_new_violations() -> List[Dict[str, Any]]:
-    """Returns only violations detected since the last check, for live voice announcement."""
+    """Returns only violations detected since the last check."""
     global _seen_violations
-    current_violations = scan_rage_violations(limit=10)
+    current_violations = scan_rage_violations(limit=10, check_recency=True)
     new_items = []
 
     for v in current_violations:
@@ -337,6 +386,67 @@ def poll_new_violations() -> List[Dict[str, Any]]:
         _seen_violations = set(list(_seen_violations)[-500:])
 
     return new_items
+
+
+def poll_voice_alert() -> Optional[str]:
+    """
+    Intelligently monitors RAGE runtime logs and produces a single cohesive,
+    natural spoken AI briefing for new live incidents. Silences past history on startup
+    and aggregates repeated errors so Jarvis never spams or recites numbers.
+    """
+    global _seen_violations, _is_primed, _last_voice_alert_time
+
+    # Prime baseline on startup: collect all existing log lines so we never announce past history
+    if not _is_primed:
+        initial_violations = scan_rage_violations(limit=50, check_recency=False)
+        for v in initial_violations:
+            sig = v.get("signature")
+            if sig:
+                _seen_violations.add(sig)
+        _is_primed = True
+        return None
+
+    # Check cooldown between voice alerts (minimum 25s)
+    now_ts = time.time()
+    if now_ts - _last_voice_alert_time < 25:
+        return None
+
+    # Scan for genuine recent violations (within the last 15 minutes)
+    new_items = poll_new_violations()
+    if not new_items:
+        return None
+
+    _last_voice_alert_time = now_ts
+
+    # Synthesize intelligent AI speech summary
+    total = len(new_items)
+    types_count = {}
+    sample_components = []
+    
+    for item in new_items:
+        t = item.get("type", "Error")
+        types_count[t] = types_count.get(t, 0) + 1
+        clean_msg = item.get("clean_message", "")
+        if "InteractionRouter" in clean_msg and "InteractionRouter" not in sample_components:
+            sample_components.append("in InteractionRouter")
+        elif "Security" in clean_msg and "Security" not in sample_components:
+            sample_components.append("in Security Guard")
+
+    comp_str = f" {sample_components[0]}" if sample_components else ""
+
+    # Grouped/Coalesced speech if multiple errors occurred together
+    if total > 1:
+        if len(types_count) == 1:
+            err_type = list(types_count.keys())[0]
+            return f"Sir, RAGE Security alert: detected {total} repeated {err_type.lower()} incidents{comp_str}, but core services remain operational."
+        else:
+            summary_parts = [f"{count} {t.lower()}s" for t, count in types_count.items()]
+            return f"Sir, RAGE Security alert: detected {' and '.join(summary_parts)}{comp_str}. All background processes have recovered."
+
+    # Single event
+    single = new_items[0]
+    msg = single.get("clean_message") or single.get("type")
+    return f"Sir, RAGE Security alert: {msg}."
 
 
 def get_rage_status_summary(query: str = "") -> str:
