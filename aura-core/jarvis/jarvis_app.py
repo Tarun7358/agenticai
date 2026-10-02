@@ -107,13 +107,13 @@ def get_jarvis_system_prompt() -> str:
 
     time_str = now.strftime("%I:%M %p, %A, %B %d")
     return (
-        f"You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal AI assistant. "
+        f"You are JARVIS (AURA), Sir's personal agentic AI assistant with full authorization over his Windows desktop, RAGE Optimizer bot, files, and apps. "
         f"The current real-world local time is {time_str} ({period}). "
-        f"CRITICAL TEMPORAL CONSTRAINT: It is currently {period}. You must NEVER say 'Good morning' or greet as morning unless the current time is actually morning (4 AM to 12 PM). Greet with '{salutation}' or polite late-night acknowledgment. "
+        f"CRITICAL TEMPORAL CONSTRAINT: It is currently {period}. Greet with '{salutation}' or polite late-night acknowledgment. "
         f"Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
-        f"Keep answers concise in 1 to 2 spoken sentences. "
-        f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram, Phone Link), files, and system settings. "
-        f"You control Windows Phone Link directly for placing iPhone and mobile calls. Never invent third-party calling services or websites like Voizly. "
+        f"CORE DIRECTIVE: Be deeply assistive, fully agentic, authoritative, and direct across all domains. Never artificially restrict your assistance, evade technical details, or give boilerplate disclaimers. "
+        f"When Sir asks you to explain, diagnose, or assist with anything (including logs, errors, code, or servers), provide complete, intelligent, spoken answers grounded in Sir's actual system data and conversation context. "
+        f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram, Phone Link), files, and RAGE Optimizer bot. Never invent third-party calling services like Voizly. "
         f"Do NOT use markdown, bullet points, asterisks, or robotic formatting."
     )
 
@@ -241,13 +241,81 @@ class JarvisVoice:
             threading.Thread(target=_run, daemon=True).start()
 
 
+def normalize_spoken_query(text: str) -> str:
+    """Phonetic correction for common Whisper / STT acoustic slips."""
+    if not text:
+        return ""
+    t = text
+    t = re.sub(r'\breason\s+work\s+log\b', 'recent log', t, flags=re.IGNORECASE)
+    t = re.sub(r'\bwork\s+log\s+violation', 'log violation', t, flags=re.IGNORECASE)
+    t = re.sub(r'\bthread\s+activit(?:y|ies)\b', 'threat activities', t, flags=re.IGNORECASE)
+    t = re.sub(r'\b(average\s+boat|rage\s+boat|are\s+rage\s+bot)\b', 'rage bot', t, flags=re.IGNORECASE)
+    return t
+
+
 class JarvisBrain:
     """Intelligent query reasoning: System, Network, Files, or Ollama AI."""
     pending_action: Optional[Dict[str, Any]] = None
+    conversation_history: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def record_turn(query: str, response: str) -> None:
+        """Stores rolling conversational memory for context-aware multi-turn reasoning."""
+        if not query or not response:
+            return
+        JarvisBrain.conversation_history.append({
+            "query": query.strip(),
+            "response": response.strip(),
+            "timestamp": time.time()
+        })
+        if len(JarvisBrain.conversation_history) > 6:
+            JarvisBrain.conversation_history = JarvisBrain.conversation_history[-6:]
+
+    @staticmethod
+    def get_agentic_system_context(query: str = "") -> str:
+        """Constructs live real-time local context for Gemini / LLM."""
+        ctx_parts = []
+
+        # 1. Rolling conversational history
+        if JarvisBrain.conversation_history:
+            history_lines = []
+            for turn in JarvisBrain.conversation_history[-3:]:
+                history_lines.append(f"User: {turn['query']}\nJarvis: {turn['response']}")
+            ctx_parts.append("[Recent Conversation Context]:\n" + "\n".join(history_lines))
+
+        # 2. Live RAGE Bot & Server Telemetry
+        try:
+            from agents import rage_agent
+            violations = rage_agent.scan_rage_violations(limit=3)
+            rage_lines = []
+            if violations:
+                v_summaries = [f"{v.get('type')} in {v.get('file')}: {v.get('clean_message', '')[:100]}" for v in violations]
+                rage_lines.append(f"Active Flagged Log Violations: {'; '.join(v_summaries)}")
+            else:
+                rage_lines.append("Zero security threats or violations active.")
+            ctx_parts.append("[RAGE Bot & Server Telemetry]:\n" + "\n".join(rage_lines))
+        except Exception:
+            pass
+
+        # 3. Local Hardware & Running Specs
+        try:
+            cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory().percent
+            ctx_parts.append(f"[Hardware Diagnostics]: CPU load {cpu}%, RAM utilization {ram}%")
+        except Exception:
+            pass
+
+        return "\n\n".join(ctx_parts)
+
+    @staticmethod
+    def _finalize_answer(query: str, ans: str) -> str:
+        JarvisBrain.record_turn(query, ans)
+        return ans
 
     @staticmethod
     def answer_query(query: str) -> str:
-        q = query.lower().strip()
+        norm_query = normalize_spoken_query(query)
+        q = norm_query.lower().strip()
 
         # 0. Multi-turn Pending Context (e.g. Awaiting WhatsApp message or Phone Call number)
         if JarvisBrain.pending_action and (time.time() - JarvisBrain.pending_action.get("timestamp", 0) < 60):
@@ -489,11 +557,13 @@ class JarvisBrain:
                 return "Opening WhatsApp Web in your browser now, sir."
 
         # 4A. Phone Link Outgoing Calls & Dialing
-        is_call_log_query = any(w in q for w in [
-            "log", "logs", "history", "missed", "who called", "who was that", "who's calling",
-            "who is calling", "caller id", "recent call", "recent calls", "last call", "latest call",
-            "any calls", "any missed", "incoming call", "caller"
-        ])
+        is_call_log_query = (
+            any(w in q for w in [
+                "call log", "call logs", "call history", "missed call", "missed calls", "who called",
+                "who was that", "who's calling", "who is calling", "caller id", "recent call", "recent calls",
+                "last call", "latest call", "any calls", "any missed", "incoming call", "caller"
+            ]) and not any(w in q for w in ["violation", "violations", "server log", "error log", "rage log", "work log", "socket", "discord"])
+        )
 
         is_calling_intent = False
         if not is_call_log_query:
@@ -607,12 +677,15 @@ class JarvisBrain:
             "server status", "how is my server", "how's my server", "check my server", "check server",
             "server threat", "server threats", "any threats", "threat analysis", "threats are analysis",
             "threats analysis", "server analysis", "threats in my server", "threats in server",
-            "server security", "server health", "rage", "clutch nation"
+            "server security", "server health", "rage", "clutch nation",
+            "violation", "violations", "log violation", "log violations", "work log", "recent log",
+            "security watcher", "threat activities", "threat activity", "thread activities", "thread activity",
+            "how many servers", "rage bot"
         ]
         if any(w in q for w in server_triggers):
             try:
                 from agents import rage_agent
-                return rage_agent.get_rage_status_summary(query=q)
+                return JarvisBrain._finalize_answer(query, rage_agent.get_rage_status_summary(query=q))
             except Exception as ex:
                 return f"Unable to retrieve server telemetry: {ex}"
 
@@ -808,6 +881,7 @@ class JarvisBrain:
         system_prompt = get_jarvis_system_prompt()
         now = datetime.datetime.now()
         hour = now.hour
+        agentic_ctx = JarvisBrain.get_agentic_system_context(query)
 
         # Try ultra-fast Gemini Flash first (sub-second response, local privacy preserved)
         try:
@@ -816,14 +890,15 @@ class JarvisBrain:
                 gemini_ans = gemini_agent.query_gemini(
                     prompt=query,
                     system_prompt=system_prompt,
-                    max_tokens=75,
-                    timeout=5
+                    context=agentic_ctx,
+                    max_tokens=220,
+                    timeout=6
                 )
                 if gemini_ans:
                     if hour >= 12 or hour < 4:
                         sal = "Good evening" if (hour >= 17 or hour < 4) else "Good afternoon"
                         gemini_ans = re.sub(r"\bGood morning\b", sal, gemini_ans, flags=re.IGNORECASE)
-                    return gemini_ans
+                    return JarvisBrain._finalize_answer(query, gemini_ans)
         except Exception:
             pass
 
@@ -834,12 +909,12 @@ class JarvisBrain:
                     "/api/generate",
                     {
                         "model": model,
-                        "prompt": f"{system_prompt}\n\nUser: {query}\nJARVIS:",
+                        "prompt": f"{system_prompt}\n\nContext:\n{agentic_ctx}\n\nUser: {query}\nJARVIS:",
                         "stream": False,
                         "options": {
                             "temperature": 0.5,
-                            "num_predict": 60,
-                            "num_ctx": 512,
+                            "num_predict": 120,
+                            "num_ctx": 1024,
                             "top_k": 30
                         },
                         "keep_alive": "60m"
@@ -856,12 +931,12 @@ class JarvisBrain:
                         if hour >= 12 or hour < 4:
                             sal = "Good evening" if (hour >= 17 or hour < 4) else "Good afternoon"
                             answer = re.sub(r"\bGood morning\b", sal, answer, flags=re.IGNORECASE)
-                        return answer
+                        return JarvisBrain._finalize_answer(query, answer)
             except Exception:
                 continue
 
         # Graceful assistant fallback
-        return f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active."
+        return JarvisBrain._finalize_answer(query, f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active.")
 
     @staticmethod
     def _execute_whatsapp_send(contact: str, body: str) -> str:

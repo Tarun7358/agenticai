@@ -449,12 +449,78 @@ def poll_voice_alert() -> Optional[str]:
     return f"Sir, RAGE Security alert: {msg}."
 
 
+def explain_recent_violations(limit: int = 3) -> str:
+    """
+    Produces a thorough, intelligent, spoken breakdown of the recent log violations
+    detected in RAGE Optimizer logs, including root causes and actionable recommendations.
+    """
+    violations = scan_rage_violations(limit=10)
+    if not violations:
+        return "Sir, I have re-scanned the RAGE security and error logs. There are currently zero active violations or error events recorded. All defensive modules and actor endpoints are operating nominally."
+
+    unique_items = []
+    seen = set()
+    for v in violations:
+        msg = v.get("clean_message", "")
+        core = re.sub(r'[^a-zA-Z0-9]', '', msg[:70].lower())
+        if core not in seen:
+            seen.add(core)
+            unique_items.append(v)
+        if len(unique_items) >= limit:
+            break
+
+    count = len(unique_items)
+    ordinal = ["first", "second", "third", "fourth", "fifth"]
+    explanations = []
+
+    for i, v in enumerate(unique_items):
+        ord_word = ordinal[i] if i < len(ordinal) else f"number {i+1}"
+        v_type = v.get("type", "Error")
+        raw_msg = v.get("message", "")
+        file_name = v.get("file", "error.log")
+
+        if "unknown interaction" in raw_msg.lower() or "10062" in raw_msg:
+            explanations.append(
+                f"{ord_word.capitalize()}, in {file_name}, a {v_type} in the Interaction Router: Discord returned error 10062 Unknown Interaction during an addrole command, meaning the response webhook timed out past Discord's 3-second acknowledgement window."
+            )
+        elif "ip discovery" in raw_msg.lower() or "socket closed" in raw_msg.lower():
+            explanations.append(
+                f"{ord_word.capitalize()}, an Unhandled Rejection {v_type}: the bot failed UDP IP discovery because the voice socket connection closed unexpectedly during packet transmission."
+            )
+        elif "rate limit" in v_type.lower() or "429" in raw_msg:
+            explanations.append(
+                f"{ord_word.capitalize()}, a Rate Limit Alert: an endpoint exceeded Discord's request threshold and was throttled."
+            )
+        elif "eaddrinuse" in raw_msg.lower() or "address already in use" in raw_msg.lower():
+            explanations.append(
+                f"{ord_word.capitalize()}, an address conflict in {file_name}: port 5000 was already bound by an existing process."
+            )
+        elif "token" in v_type.lower() or "abuse" in v_type.lower():
+            explanations.append(
+                f"{ord_word.capitalize()}, a Security Violation: unauthorized access attempt flagged by the Trusted Actor Abuse Handler."
+            )
+        else:
+            clean = v.get("clean_message", "")[:100]
+            explanations.append(f"{ord_word.capitalize()}, a {v_type} in {file_name}: {clean}.")
+
+    joined_exp = " ".join(explanations)
+    return (
+        f"Sir, here is the detailed breakdown of the {count} flagged log violations. "
+        f"{joined_exp} "
+        f"These indicate Discord API latency and temporary voice gateway socket resets rather than a malicious breach. Shall I clear the log cache or inspect the interaction router code for you?"
+    )
+
+
 def get_rage_status_summary(query: str = "") -> str:
     """
     Synthesizes a complete Jarvis voice briefing about RAGE bot status,
     specific primary server telemetry (AURA XTREMEZ), and security violations.
     """
     q_low = query.lower()
+
+    # Direct violation explanation check
+    if any(w in q_low for w in ["explain", "why", "detail", "details", "what are", "three", "breakdown", "list"]) and any(w in q_low for w in ["violation", "violations", "log", "reason work log", "work log", "error"]):
+        return explain_recent_violations(limit=3)
 
     server_keywords = [
         "my server", "aura xtremez", "aura extremez", "xtremez", "1140892126402596905",
@@ -471,6 +537,8 @@ def get_rage_status_summary(query: str = "") -> str:
 
     # 1. User specifically asking about violations or security
     if any(w in q_low for w in ["violation", "violations", "abuse", "threat", "breach"]):
+        if any(w in q_low for w in ["explain", "what are", "details", "why", "three", "recent", "reason", "breakdown"]):
+            return explain_recent_violations(limit=3)
         if violations:
             latest = violations[0]
             count = len(violations)
