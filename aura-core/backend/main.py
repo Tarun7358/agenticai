@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from config import settings
 from memory.store import init_db, get_history, get_recent_events
 from utils.llm import chat, check_ollama_status, summarize
-from agents import network_agent, instagram_agent, file_agent
+from agents import network_agent, instagram_agent, file_agent, iphone_agent
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -240,3 +240,31 @@ class SummarizeRequest(BaseModel):
 async def summarize_text(req: SummarizeRequest):
     result = await summarize(req.text, req.instruction)
     return {"summary": result}
+
+
+# ─── iPhone / Mobile Integration ─────────────────────────────────────────────
+
+class CallEventRequest(BaseModel):
+    caller: str
+    event_type: str = "missed"  # "missed", "incoming", "scheduled"
+    time: Optional[str] = None
+
+@app.post("/api/iphone/call-event")
+async def log_iphone_call(req: CallEventRequest):
+    """Endpoint for iOS Shortcuts or Phone Link to notify JARVIS of a call event."""
+    event = iphone_agent.record_call_event(req.caller, req.event_type, req.time)
+    return {"status": "ok", "event": event}
+
+@app.get("/api/iphone/calls")
+async def get_iphone_calls():
+    """Returns missed calls and recent phone notifications."""
+    missed = iphone_agent.get_missed_calls()
+    recent = iphone_agent.get_recent_phone_notifications()
+    upcoming = iphone_agent.get_upcoming_calls()
+    return {"missed_calls": missed, "recent_events": recent, "upcoming_calls": upcoming}
+
+@app.post("/api/iphone/pair")
+async def pair_iphone():
+    """Triggers Windows Phone Link for Bluetooth P2P pairing."""
+    msg = iphone_agent.launch_phone_link()
+    return {"status": "ok", "message": msg}
