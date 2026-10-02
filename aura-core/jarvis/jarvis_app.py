@@ -391,7 +391,34 @@ class JarvisBrain:
                 except Exception:
                     pass
 
-        # 7. Conversational Query via Ollama Local LLM (Optimized for RTX 2050 sub-second response)
+        # 9. Project Ideas & Technical Problem Solving
+        if any(w in q for w in ["project idea", "project ideas", "what should i build", "suggest a project"]):
+            try:
+                from agents import research_agent
+                ideas = research_agent.get_project_idea_framework()
+                import random
+                chosen = random.choice(ideas)
+                return f"Here is a high-impact architecture for you, sir: {chosen}"
+            except Exception:
+                pass
+
+        # 10. Anonymous Public Knowledge / Web Research
+        search_match = re.search(r"\b(?:search online for|search web for|look up|what is|who is|explain)\s+(.+)$", q)
+        if search_match and not any(w in q for w in ["your name", "who are you", "what can you do", "my name", "the time", "system status"]):
+            topic = search_match.group(1).strip(" ?.")
+            try:
+                from agents import research_agent
+                res = research_agent.query_public_knowledge(topic)
+                if res.get("status") == "ok":
+                    summary = res.get("summary", "")
+                    first_two = ". ".join(summary.split(". ")[:2]).strip()
+                    if not first_two.endswith("."):
+                        first_two += "."
+                    return f"According to verified public records, sir: {first_two}"
+            except Exception:
+                pass
+
+        # 11. Conversational Query via Ollama Local LLM (Optimized for RTX 2050 sub-second response)
         for model in ["llama3.2:1b", "mistral"]:
             try:
                 resp = requests.post(
@@ -401,10 +428,10 @@ class JarvisBrain:
                         "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
                         "stream": False,
                         "options": {
-                            "temperature": 0.5,
-                            "num_predict": 30,
-                            "num_ctx": 384,
-                            "top_k": 20
+                            "temperature": 0.6,
+                            "num_predict": 75,
+                            "num_ctx": 512,
+                            "top_k": 30
                         },
                         "keep_alive": "60m"
                     },
