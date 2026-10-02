@@ -32,6 +32,13 @@ import psutil
 import speech_recognition as sr
 import pyttsx3
 import requests
+import tempfile
+
+try:
+    import pygame
+    HAS_PYGAME = True
+except Exception:
+    HAS_PYGAME = False
 
 try:
     import keyboard
@@ -196,11 +203,18 @@ def query_ollama_endpoint(endpoint_path: str, payload: dict, timeout=8):
 
 
 class JarvisVoice:
-    """Offline, human-like voice synthesis using pyttsx3."""
+    """Cinema-Grade Neural British Voice (en-GB-RyanNeural) with Pygame & Instant Barge-In."""
     def __init__(self):
         self._lock = threading.Lock()
         self.is_speaking = False
+        self._stop_requested = threading.Event()
         self.preferred_voice_id = None
+        self._temp_audio_file = os.path.join(tempfile.gettempdir(), "jarvis_neural_speech.mp3")
+        try:
+            if HAS_PYGAME:
+                pygame.mixer.init()
+        except Exception:
+            pass
         try:
             eng = pyttsx3.init()
             for v in eng.getProperty('voices'):
@@ -211,7 +225,19 @@ class JarvisVoice:
         except Exception:
             pass
 
+    def stop(self):
+        """Instant Barge-In: immediately halts ongoing speech."""
+        self._stop_requested.set()
+        try:
+            if HAS_PYGAME and pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self.is_speaking = False
+
     def speak(self, text: str, on_start=None, on_end=None, blocking=False):
+        self._stop_requested.clear()
+
         def _run():
             with self._lock:
                 self.is_speaking = True
@@ -219,21 +245,52 @@ class JarvisVoice:
                     on_start()
                 try:
                     clean = re.sub(r'[*_#`]', '', text)
-                    clean = re.sub(r'\[.*?\]\(.*?\)', '', clean)
-                    eng = pyttsx3.init()
-                    eng.setProperty('rate', 192)
-                    eng.setProperty('volume', 1.0)
-                    if self.preferred_voice_id:
-                        eng.setProperty('voice', self.preferred_voice_id)
-                    eng.say(clean)
-                    eng.runAndWait()
-                    eng.stop()
+                    clean = re.sub(r'\[.*?\]\(.*?\)', '', clean).strip()
+                    if not clean or self._stop_requested.is_set():
+                        return
+
+                    # 1. Attempt High-Fidelity British Cinema Voice via edge-tts
+                    played_neural = False
+                    if HAS_PYGAME:
+                        try:
+                            import edge_tts
+                            import asyncio
+                            communicate = edge_tts.Communicate(clean, "en-GB-RyanNeural")
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(communicate.save(self._temp_audio_file))
+                            loop.close()
+
+                            if not self._stop_requested.is_set() and os.path.exists(self._temp_audio_file):
+                                if not pygame.mixer.get_init():
+                                    pygame.mixer.init()
+                                pygame.mixer.music.load(self._temp_audio_file)
+                                pygame.mixer.music.play()
+                                while pygame.mixer.music.get_busy():
+                                    if self._stop_requested.is_set():
+                                        pygame.mixer.music.stop()
+                                        break
+                                    time.sleep(0.04)
+                                played_neural = True
+                        except Exception:
+                            played_neural = False
+
+                    # 2. Local SAPI5 Fallback if offline or edge-tts fails
+                    if not played_neural and not self._stop_requested.is_set():
+                        eng = pyttsx3.init()
+                        eng.setProperty('rate', 192)
+                        eng.setProperty('volume', 1.0)
+                        if self.preferred_voice_id:
+                            eng.setProperty('voice', self.preferred_voice_id)
+                        eng.say(clean)
+                        eng.runAndWait()
+                        eng.stop()
+
                 except Exception as ex:
                     print(f"[Voice] Speech error: {ex}")
                 finally:
-                    time.sleep(0.15)
                     self.is_speaking = False
-                    if on_end:
+                    if on_end and not self._stop_requested.is_set():
                         on_end()
 
         if blocking:
@@ -303,6 +360,15 @@ class JarvisBrain:
             cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
             ctx_parts.append(f"[Hardware Diagnostics]: CPU load {cpu}%, RAM utilization {ram}%")
+        except Exception:
+            pass
+
+        # 4. Long-Term Epistemic Memory & User Facts
+        try:
+            from agents import memory_agent
+            mem_snippet = memory_agent.get_memory_context_snippet(query, limit=3)
+            if mem_snippet:
+                ctx_parts.append(mem_snippet)
         except Exception:
             pass
 
@@ -377,6 +443,41 @@ class JarvisBrain:
                     JarvisBrain.pending_action = None
         else:
             JarvisBrain.pending_action = None
+
+        # 0.1 Executive Briefing & Daily Status Report
+        if any(w in q for w in ["briefing", "morning briefing", "daily briefing", "executive briefing", "status briefing"]):
+            try:
+                from agents import tools_registry
+                return JarvisBrain._finalize_answer(query, tools_registry.get_executive_briefing())
+            except Exception as ex:
+                return f"Unable to compile executive briefing: {ex}"
+
+        # 0.2 Epistemic Long-Term Memory (Store, Recall, Preferences)
+        if any(q.startswith(p) for p in ["remember that", "remember this", "keep in mind that", "note that", "recall", "what do you remember", "what is my", "what are my", "do you remember"]):
+            try:
+                from agents import memory_agent
+                ans = memory_agent.parse_memory_command(query)
+                if ans:
+                    return JarvisBrain._finalize_answer(query, ans)
+            except Exception as ex:
+                return f"Memory operation failed: {ex}"
+
+        # 0.3 Multimodal Screen Vision Analysis
+        if any(w in q for w in ["look at my screen", "what's on my screen", "what is on my screen", "read my screen", "inspect my screen", "analyze my screen", "see my screen", "check my screen"]):
+            try:
+                from agents import vision_agent
+                return JarvisBrain._finalize_answer(query, vision_agent.analyze_screen(prompt=query))
+            except Exception as ex:
+                return f"Visual inspection failed: {ex}"
+
+        # 0.4 Autonomous Self-Healing Server Agent & Port Conflict Fix
+        if any(w in q for w in ["heal server", "fix server", "clear port 5000", "kill port 5000", "resolve server issues", "repair server", "self heal"]):
+            try:
+                from agents import self_healing_agent
+                ans = self_healing_agent.auto_heal_server_issues()
+                return JarvisBrain._finalize_answer(query, ans)
+            except Exception as ex:
+                return f"Self-healing encountered an issue: {ex}"
 
         # 1. Instant Fast-Path Common Commands (<5ms latency)
         if any(k in q for k in ["what can you do", "your capabilities", "what do you do", "features"]):
@@ -1097,6 +1198,10 @@ class JarvisApp:
     def trigger_listening(self):
         """Called when user clicks HUD Arc Reactor or presses hotkey."""
         if self.state in ["thinking", "speaking"] or self.voice.is_speaking:
+            print("[Jarvis] Arc Reactor clicked during speech -> Instant Barge-In!")
+            self.voice.stop()
+            self.state = "idle"
+            self._enter_awaiting_command()
             return
         print("[Jarvis] Manual trigger activated (Arc Reactor clicked / hotkey)")
         self._enter_awaiting_command()
@@ -1207,8 +1312,24 @@ class JarvisApp:
                     print(f"[*] Microphone calibrated! Ambient noise = {calibrated:.1f}, Active threshold = {rec.energy_threshold:.1f}")
 
                 def callback(recognizer, audio):
-                    # If Jarvis is currently speaking, drop audio buffer
-                    if self.voice.is_speaking or self.state in ["thinking", "speaking"]:
+                    # Instant Acoustic Barge-In detection while speaking
+                    if self.voice.is_speaking or self.state in ["speaking"]:
+                        try:
+                            spoken = recognizer.recognize_google(audio).lower().strip()
+                        except Exception:
+                            return
+                        if any(w in spoken for w in ["stop", "cancel", "quiet", "silence", "shh", "wait", "hold on", "jarvis", "aura"]):
+                            print(f"[*] Acoustic barge-in triggered by user: '{spoken}'! Halting speech immediately.")
+                            self.voice.stop()
+                            self.state = "idle"
+                            triggered, query = check_wake_word(spoken)
+                            if triggered and query and len(query) >= 3:
+                                self._process_query(query)
+                            else:
+                                self._enter_awaiting_command()
+                        return
+
+                    if self.state in ["thinking"]:
                         return
 
                     try:
