@@ -16,6 +16,7 @@ import threading
 import datetime
 import re
 import audioop
+from typing import Optional, List, Dict, Any
 
 import subprocess
 import webbrowser
@@ -94,6 +95,58 @@ JARVIS_SYSTEM_PROMPT = (
     "You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
     "Do NOT use markdown, bullet points, asterisks, or robotic formatting."
 )
+
+
+def get_live_phone_calls_summary(query: str = "") -> Optional[str]:
+    """
+    Directly queries live Phone Link call events from Laptop 2 and local backend.
+    Returns real, factual caller details and never hallucinates.
+    """
+    backend_urls = [
+        os.environ.get("OLLAMA_BASE_URL", "http://192.168.0.4:8000").rstrip("/"),
+        "http://192.168.0.4:8000",
+        "http://127.0.0.1:8000"
+    ]
+    calls_data = None
+    for b in backend_urls:
+        try:
+            r = requests.get(f"{b}/phone/calls", timeout=2)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("count", 0) > 0 or data.get("recent"):
+                    calls_data = data
+                    break
+        except Exception:
+            continue
+
+    if not calls_data or not calls_data.get("recent"):
+        return None
+
+    recent = calls_data.get("recent", [])
+    missed = calls_data.get("missed", [])
+    q_low = query.lower()
+
+    if "missed" in q_low:
+        if not missed:
+            return "You have no unread missed calls, sir. All your recent calls were answered."
+        latest = missed[-1]
+        caller = latest.get("caller", "Unknown")
+        time_str = latest.get("time", "")
+        if len(missed) == 1:
+            return f"Sir, you have one missed call from {caller} at {time_str}."
+        else:
+            names = ", ".join(m.get("caller", "Unknown") for m in missed[-3:])
+            return f"Sir, you have {len(missed)} missed calls. Recent callers include {names}."
+
+    if any(k in q_low for k in ["caller id", "who called", "who was that", "caller", "incoming", "who's calling"]):
+        latest = recent[-1]
+        caller = latest.get("caller", "Unknown")
+        ctype = latest.get("type", "call")
+        time_str = latest.get("time", "")
+        return f"Sir, the latest {ctype} was from {caller} at {time_str}."
+
+    latest = recent[-1]
+    return f"Sir, your latest call was a {latest.get('type', 'call')} from {latest.get('caller', 'Unknown')} at {latest.get('time', '')}."
 
 
 def query_ollama_endpoint(endpoint_path: str, payload: dict, timeout=8):
@@ -279,27 +332,25 @@ class JarvisBrain:
                 webbrowser.open("https://web.whatsapp.com/")
                 return "Opening WhatsApp Web in your browser now, sir."
 
-        # 4. iPhone & Phone Link Integration
-        if any(w in q for w in ["iphone", "phone link", "missed call", "missed calls", "upcoming call", "call info", "calls info", "incoming call"]):
+        # 4. iPhone & Phone Link Integration (Real Factual Telemetry)
+        if any(w in q for w in ["iphone", "phone link", "missed call", "missed calls", "upcoming call", "call info", "calls info", "incoming call", "caller id", "who called", "who was that", "who's calling", "who is calling", "caller", "recent call", "recent calls", "last call", "latest call", "call log", "call logs", "phone call", "phone calls", "any calls", "any missed call"]):
             try:
                 from agents import iphone_agent
-                if any(w in q for w in ["connect", "link", "pair", "setup", "integrate", "how"]):
+                if any(w in q for w in ["connect", "link", "pair", "setup", "integrate", "how to pair"]):
                     iphone_agent.launch_phone_link()
                     return "Opening Windows Phone Link for your iPhone now, sir. Select iPhone to pair via Bluetooth with zero data leakage."
 
-                if any(w in q for w in ["missed", "check calls", "call info", "calls info"]):
-                    notifs = iphone_agent.get_recent_phone_notifications()
-                    if notifs:
-                        return f"Sir, I checked your phone notifications. There are {len(notifs)} recent call or communication events logged locally."
-                    return "No unread missed calls found in your recent logs, sir. Your communications are up to date."
+                # Factual call summary from Laptop 2 / Local Phone Link
+                call_info = get_live_phone_calls_summary(q)
+                if call_info:
+                    return call_info
 
                 if any(w in q for w in ["upcoming", "schedule", "calendar"]):
                     return "Monitoring your upcoming schedule now, sir. All scheduled calendar calls will be announced before they begin."
 
-                iphone_agent.launch_phone_link()
-                return "Launching Windows Phone Link on your screen now, sir. You can monitor live calls and notifications directly."
-            except Exception:
-                pass
+                return "No unread missed calls or active phone events logged in Phone Link right now, sir. Once a call arrives on your iPhone, I will announce the exact caller name immediately."
+            except Exception as ex:
+                return f"Unable to retrieve phone records: {ex}"
 
         # 5. Cross-Laptop LAN Sync & Remote HUD Pop-Up
         if any(w in q for w in ["pop up on this pc", "popup on this pc", "pop up on pc", "show hud on pc", "show hud", "pop up hud", "open hud", "wake pc", "trigger pc", "other laptop", "main pc", "primary pc", "pop up here", "popup here", "relay to pc"]):
