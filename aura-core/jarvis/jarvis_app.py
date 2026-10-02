@@ -149,28 +149,64 @@ class JarvisBrain:
         if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
             return "Good day, sir. All systems are operational. How can I assist you?"
 
-        # 2. Instagram Status, Reels, Posts, and Metrics (Check BEFORE general hardware words)
-        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers", "dashboard"]):
+        # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
+        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers", "dashboard", "caption"]):
             import webbrowser
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
             env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
             ig_user = env_vals.get("INSTAGRAM_USERNAME") or getattr(settings, "instagram_username", "") or "clasherofficial0"
 
-            # If user asks for dashboard or to check/open dashboard
+            # A. Reel Upload Request
+            if any(w in q for w in ["upload reel", "upload video", "post reel", "post video", "upload a reel", "publish reel"]):
+                try:
+                    from agents import instagram_engine
+                    res = instagram_engine.upload_reel_post()
+                    if res.get("status") == "ok":
+                        return f"Reel uploaded successfully to @{ig_user}, sir! Your video {res.get('file')} is live with an AI-crafted viral caption."
+                    elif "verification_code" in res.get("message", ""):
+                        return f"Sir, Instagram requires a one-time two-factor verification code for @{ig_user}. Please say your 6-digit code or enter it in the console to unlock autonomous uploading."
+                    else:
+                        return f"Sir, I found your clip, but Instagram reported: {res.get('message', 'authentication required')}. I am opening your dashboard to assist."
+                except Exception as ex:
+                    return f"Uploading is prepared, sir. However, we need to finalize the one-time Instagram authentication: {str(ex)[:100]}."
+
+            # B. AI Caption Generation Request
+            if any(w in q for w in ["suggest caption", "write caption", "generate caption", "reel caption", "hashtags"]):
+                try:
+                    from agents import instagram_engine
+                    caption = instagram_engine.generate_ai_caption(topic=query)
+                    return f"Here is a viral caption for your reel, sir: {caption}"
+                except Exception:
+                    pass
+
+            # C. Live Reel Views & Analytics Request
+            if any(w in q for w in ["reel", "reels", "views", "analytics", "stats", "insight", "recent post", "last post"]):
+                try:
+                    from agents import instagram_engine
+                    data = instagram_engine.get_live_reel_analytics()
+                    if data.get("status") == "ok":
+                        plays = data.get("latest_plays", 0)
+                        likes = data.get("latest_likes", 0)
+                        count = data.get("count", 0)
+                        return f"Sir, your latest reel has {plays:,} plays and {likes:,} likes across {count} recent posts for @{ig_user}."
+                except Exception:
+                    pass
+
+                # If 2FA session pending or rate limit, open browser directly
+                try:
+                    webbrowser.open(f"https://www.instagram.com/{ig_user}/")
+                except Exception:
+                    pass
+                return f"Opening your Instagram reel analytics for @{ig_user} in your browser now, sir. Once your one-time 2FA code is entered, I will pull exact metrics headlessly."
+
+            # D. Dashboard / Profile Request
             if any(w in q for w in ["dashboard", "open instagram", "open insta", "open profile"]):
                 try:
                     webbrowser.open(f"https://www.instagram.com/{ig_user}/")
                 except Exception:
                     pass
                 return f"Opening your Instagram professional dashboard for @{ig_user} in your browser now, sir. You can inspect all real-time creator analytics and reel performance directly."
-
-            if any(w in q for w in ["reel", "reels", "views", "analytics", "stats", "insight", "recent post", "last post"]):
-                try:
-                    webbrowser.open(f"https://www.instagram.com/{ig_user}/")
-                except Exception:
-                    pass
-                return f"Opening your Instagram reel analytics for @{ig_user} in your browser now, sir. Because Instagram rate-limits automated third-party scrapers, your exact reel views and retention are displayed directly on your page."
 
             if ig_user and ig_user != "your_instagram_username":
                 if any(w in q for w in ["connect", "login", "link", "authenticate", "account"]):
