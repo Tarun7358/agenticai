@@ -44,7 +44,7 @@ except Exception as e:
 
 WAKE_PATTERNS = [
     r"\b(hey|hi|ok|hello|yo|ay)?\s*(aura|ora|ara|laura|aora|aurora)\b",
-    r"\b(hey|hi|ok|hello|yo)?\s*(jarvis|travis|service|jarves)\b",
+    r"\b(hey|hi|ok|hello|yo)?\s*(jarvis|travis|service|jarves|kavya|kavi)\b",
 ]
 
 def check_wake_word(text: str):
@@ -150,23 +150,27 @@ class JarvisBrain:
             return "Good day, sir. All systems are operational. How can I assist you?"
 
         # 2. Instagram Status, Reels, Posts, and Metrics (Check BEFORE general hardware words)
-        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers"]):
+        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers", "dashboard"]):
+            import webbrowser
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
             env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
-            ig_user = env_vals.get("INSTAGRAM_USERNAME") or getattr(settings, "instagram_username", "")
+            ig_user = env_vals.get("INSTAGRAM_USERNAME") or getattr(settings, "instagram_username", "") or "clasherofficial0"
 
-            if any(w in q for w in ["reel", "reels", "views", "recent post", "last post"]):
+            # If user asks for dashboard or to check/open dashboard
+            if any(w in q for w in ["dashboard", "open instagram", "open insta", "open profile"]):
                 try:
-                    from memory.store import get_db
-                    conn = get_db()
-                    row = conn.execute("SELECT followers, posts, fetched_at FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
-                    conn.close()
-                    if row:
-                        return f"According to your latest profile telemetry for @{ig_user}, you have {row[0]} followers across {row[1]} posts. Live reel views cannot be scraped directly due to Instagram rate limits, sir."
+                    webbrowser.open(f"https://www.instagram.com/{ig_user}/")
                 except Exception:
                     pass
-                return f"Sir, live reel views for @{ig_user} cannot be pulled directly right now because Instagram blocks automated scraping with rate limits. I recommend checking your professional dashboard in the Instagram app."
+                return f"Opening your Instagram professional dashboard for @{ig_user} in your browser now, sir. You can inspect all real-time creator analytics and reel performance directly."
+
+            if any(w in q for w in ["reel", "reels", "views", "analytics", "stats", "insight", "recent post", "last post"]):
+                try:
+                    webbrowser.open(f"https://www.instagram.com/{ig_user}/")
+                except Exception:
+                    pass
+                return f"Opening your Instagram reel analytics for @{ig_user} in your browser now, sir. Because Instagram rate-limits automated third-party scrapers, your exact reel views and retention are displayed directly on your page."
 
             if ig_user and ig_user != "your_instagram_username":
                 if any(w in q for w in ["connect", "login", "link", "authenticate", "account"]):
@@ -271,7 +275,7 @@ class JarvisApp:
                 self.state = "idle"
                 self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
 
-        self.command_timeout_timer = threading.Timer(8.0, _timeout)
+        self.command_timeout_timer = threading.Timer(12.0, _timeout)
         self.command_timeout_timer.daemon = True
         self.command_timeout_timer.start()
 
@@ -282,7 +286,7 @@ class JarvisApp:
         """Keeps Jarvis listening for subsequent commands without needing the wake word."""
         self.state = "awaiting_command"
         self._eval_js("setAuraState('listening', 'LISTENING...')")
-        print("[Jarvis] Continuous conversation active. Listening for follow-up without wake word...")
+        print("[Jarvis] Continuous conversation active. Listening for follow-up without wake word (20s timeout)...")
 
         if self.command_timeout_timer:
             try:
@@ -292,11 +296,11 @@ class JarvisApp:
 
         def _timeout():
             if self.state == "awaiting_command":
-                print("[Jarvis] Inactive timeout (9s). Returning to standby idle mode.")
+                print("[Jarvis] Inactive timeout (20s). Returning to standby idle mode.")
                 self.state = "idle"
                 self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
 
-        self.command_timeout_timer = threading.Timer(9.0, _timeout)
+        self.command_timeout_timer = threading.Timer(20.0, _timeout)
         self.command_timeout_timer.daemon = True
         self.command_timeout_timer.start()
 
@@ -391,7 +395,7 @@ class JarvisApp:
                             # User said just "Hey Aura" or "Jarvis"
                             self._enter_awaiting_command()
 
-                self.stop_bg_listen = rec.listen_in_background(mic, callback, phrase_time_limit=5)
+                self.stop_bg_listen = rec.listen_in_background(mic, callback, phrase_time_limit=8)
                 print(f"[*] Continuous background listener ACTIVE on '{mic_name}'.")
                 print("[*] Ready: Say 'Hey Aura' or 'Jarvis' anytime...")
             except Exception as e:
