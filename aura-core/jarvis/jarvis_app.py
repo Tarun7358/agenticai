@@ -17,6 +17,10 @@ import datetime
 import re
 import audioop
 
+import subprocess
+import webbrowser
+import urllib.parse
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(BASE_DIR, "backend")
 if BACKEND_DIR not in sys.path:
@@ -169,7 +173,6 @@ class JarvisBrain:
 
         # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
         if (any(k in q for k in ["instagram", "insta", "ig", "reel", "reels"]) or any(k in q for k in ["followers", "caption"])) and not any(w in q for w in ["youtube", "github", "git"]):
-            import webbrowser
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
             env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
@@ -234,8 +237,6 @@ class JarvisBrain:
 
         # 3. WhatsApp Integration
         if any(k in q for k in ["whatsapp", "whats app"]):
-            import subprocess
-            import urllib.parse
             if any(w in q for w in ["message", "send", "text"]):
                 clean_target = re.sub(r"\b(on\s+whatsapp|via\s+whatsapp|through\s+whatsapp|whatsapp)\b", "", q).strip()
                 m = re.search(r"(?:message|text|send)\s+(?:to\s+)?(.*?)(?:\s+(?:saying|that|with text)\s+(.*))?$", clean_target)
@@ -301,7 +302,6 @@ class JarvisBrain:
 
         # 7. Desktop App Launchers (Spotify, Discord, VS Code, Task Manager)
         if any(w in q for w in ["open spotify", "launch spotify", "play spotify", "spotify"]):
-            import subprocess
             try:
                 subprocess.Popen(["cmd", "/c", "start", "spotify:"], shell=True)
                 return "Launching Spotify on your desktop now, sir."
@@ -310,7 +310,6 @@ class JarvisBrain:
                 return "Opening Spotify Web for you now, sir."
 
         if any(w in q for w in ["open discord", "launch discord", "discord"]):
-            import subprocess
             try:
                 subprocess.Popen(["cmd", "/c", "start", "discord:"], shell=True)
                 return "Launching Discord on your desktop now, sir."
@@ -319,14 +318,38 @@ class JarvisBrain:
                 return "Opening Discord Web for you now, sir."
 
         if any(w in q for w in ["open vs code", "open code", "launch code", "visual studio code"]):
-            import subprocess
             subprocess.Popen(["code", "."], shell=True)
             return "Opening Visual Studio Code for your workspace now, sir."
 
         if any(w in q for w in ["open task manager", "launch task manager", "task manager"]):
-            import subprocess
             subprocess.Popen(["taskmgr.exe"], shell=True)
             return "Opening Task Manager on your screen now, sir."
+
+        # 8. Dynamic Autonomous App & Platform Launcher (Zero Hardcoding)
+        app_match = re.match(r"^(?:open|launch|start|run|access)\s+(?:the\s+|my\s+)?([a-zA-Z0-9_\-\. ]+)$", q)
+        if app_match:
+            target = app_match.group(1).strip()
+            web_aliases = {
+                "twitter": "https://x.com", "x": "https://x.com", "reddit": "https://reddit.com",
+                "linkedin": "https://linkedin.com", "notion": "https://notion.so", "figma": "https://figma.com",
+                "chatgpt": "https://chatgpt.com", "steam": "steam://open/main", "calculator": "calc.exe",
+                "notepad": "notepad.exe", "paint": "mspaint.exe", "file explorer": "explorer.exe",
+                "settings": "ms-settings:", "browser": "https://google.com"
+            }
+            if target in web_aliases:
+                dest = web_aliases[target]
+                if dest.startswith("http"):
+                    webbrowser.open(dest)
+                else:
+                    subprocess.Popen(["cmd", "/c", "start", dest], shell=True)
+                return f"Accessing {target.capitalize()} for you now, sir."
+            
+            # Universal discovery: Try launching as native Windows application or protocol
+            try:
+                subprocess.Popen(["cmd", "/c", "start", target], shell=True)
+                return f"Launching {target.capitalize()} on your desktop, sir."
+            except Exception:
+                pass
 
         # 5. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
         if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
