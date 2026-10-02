@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # File watching
     watched_folders: str = ""
 
+    # RAGE Bot & Clutch Nation Telemetry
+    rage_server_url: str = "https://apirageoptimisercom.altvr.in"
+    rage_log_path: str = "D:/RAGE OPTIMISER V3/CLUTCH NATION/backend/logs"
+    rage_project_root: str = "D:/RAGE OPTIMISER V3/CLUTCH NATION/backend"
+    rage_primary_server_id: str = "1140892126402596905"
+    rage_primary_server_name: str = "AURA XTREMEZ"
+    rage_jwt_secret: str = "clutchnation_super_secret_jwt_key_2025"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

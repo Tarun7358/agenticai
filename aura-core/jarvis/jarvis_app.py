@@ -40,9 +40,10 @@ except Exception:
     HAS_KEYBOARD = False
 
 try:
-    from agents import network_agent, instagram_agent, file_agent, github_agent, youtube_agent
+    from agents import network_agent, instagram_agent, file_agent, github_agent, youtube_agent, rage_agent, email_agent
     from config import settings
     HAS_LOCAL_AGENTS = True
+
 except Exception as e:
     HAS_LOCAL_AGENTS = False
 
@@ -88,13 +89,35 @@ def get_windows_default_microphone():
 
 
 
-JARVIS_SYSTEM_PROMPT = (
-    "You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal AI assistant. "
-    "Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
-    "Keep answers concise in 1 to 2 spoken sentences. "
-    "You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
-    "Do NOT use markdown, bullet points, asterisks, or robotic formatting."
-)
+def get_jarvis_system_prompt() -> str:
+    now = datetime.datetime.now()
+    hour = now.hour
+    if 4 <= hour < 12:
+        period = "morning"
+        salutation = "Good morning"
+    elif 12 <= hour < 17:
+        period = "afternoon"
+        salutation = "Good afternoon"
+    elif 17 <= hour < 22:
+        period = "evening"
+        salutation = "Good evening"
+    else:
+        period = "late night"
+        salutation = "Good evening / working late tonight"
+
+    time_str = now.strftime("%I:%M %p, %A, %B %d")
+    return (
+        f"You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal AI assistant. "
+        f"The current real-world local time is {time_str} ({period}). "
+        f"CRITICAL TEMPORAL CONSTRAINT: It is currently {period}. You must NEVER say 'Good morning' or greet as morning unless the current time is actually morning (4 AM to 12 PM). Greet with '{salutation}' or polite late-night acknowledgment. "
+        f"Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
+        f"Keep answers concise in 1 to 2 spoken sentences. "
+        f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
+        f"Do NOT use markdown, bullet points, asterisks, or robotic formatting."
+    )
+
+JARVIS_SYSTEM_PROMPT = get_jarvis_system_prompt()
+
 
 
 def get_live_phone_calls_summary(query: str = "") -> Optional[str]:
@@ -219,10 +242,39 @@ class JarvisVoice:
 
 class JarvisBrain:
     """Intelligent query reasoning: System, Network, Files, or Ollama AI."""
+    pending_action: Optional[Dict[str, Any]] = None
 
     @staticmethod
     def answer_query(query: str) -> str:
         q = query.lower().strip()
+
+        # 0. Multi-turn Pending Context (e.g. Awaiting WhatsApp message or confirmation)
+        if JarvisBrain.pending_action and (time.time() - JarvisBrain.pending_action.get("timestamp", 0) < 60):
+            action = JarvisBrain.pending_action
+            if action.get("type") == "whatsapp":
+                contact = action.get("contact", "your contact")
+
+                # Cancellation check
+                if any(w in q for w in ["cancel", "never mind", "nevermind", "leave it", "stop", "abort", "forget it", "no"]):
+                    JarvisBrain.pending_action = None
+                    return "WhatsApp message canceled, sir. Standing by."
+
+                # User says "send it" before dictating the message
+                if q in ["send it", "send", "send this", "shoot", "ok send it", "just send it"]:
+                    if not action.get("body"):
+                        action["timestamp"] = time.time()  # refresh timeout
+                        return f"Sir, you haven't dictated the message yet. What message would you like to send to {contact.title()}?"
+                    else:
+                        body = action["body"]
+                        JarvisBrain.pending_action = None
+                        return JarvisBrain._execute_whatsapp_send(contact, body)
+
+                # Message provided by user
+                dictated = re.sub(r"^(?:tell\s+(?:him|her|them)\s+|say\s+|that\s+)", "", query, flags=re.IGNORECASE).strip()
+                JarvisBrain.pending_action = None
+                return JarvisBrain._execute_whatsapp_send(contact, dictated)
+        else:
+            JarvisBrain.pending_action = None
 
         # 1. Instant Fast-Path Common Commands (<5ms latency)
         if any(k in q for k in ["what can you do", "your capabilities", "what do you do", "features"]):
@@ -242,8 +294,36 @@ class JarvisBrain:
         if any(w in q for w in ["thank", "thanks", "that is all", "that's all", "nothing", "never mind", "nevermind", "leave it", "cancel", "standby", "go to sleep", "sleep mode", "goodbye", "bye", "ok ok", "okay okay", "nothing nothing"]):
             return "Always a pleasure, sir. Standing by."
 
-        if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening", "ok", "okay", "alright", "cool"]):
-            return "Good day, sir. All systems are operational. How can I assist you?"
+        # Dynamic Time-Aware Greetings (Fixes 'Good morning' at 11 PM)
+        is_greeting = any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening", "good afternoon", "good night", "ok", "okay", "alright", "cool"]) or \
+                      any(w in q for w in ["good morning", "good evening", "good afternoon", "good night", "morning"]) or \
+                      (any(k in q for k in ["hello", "hi", "hey", "greetings"]) and len(q.split()) <= 4)
+
+        if is_greeting:
+            now = datetime.datetime.now()
+            hour = now.hour
+            time_formatted = now.strftime("%I:%M %p")
+
+            # Check if user specifically said "good morning" or "morning" when it is not morning
+            if "good morning" in q or q.strip() == "morning":
+                if hour >= 12 or hour < 4:
+                    if hour >= 21 or hour < 4:
+                        return f"Good evening, sir, though it is already {time_formatted} at night. Burning the midnight oil, I see. All systems are operational. How can I assist you?"
+                    elif 12 <= hour < 17:
+                        return f"Good afternoon, sir, it is currently {time_formatted}. All systems are operational. How can I assist you?"
+                    else:
+                        return f"Good evening, sir, it is currently {time_formatted}. All systems are operational. How can I assist you?"
+                else:
+                    return f"Good morning, sir. It is {time_formatted}. All systems are operational. How can I assist you?"
+
+            if 4 <= hour < 12:
+                return f"Good morning, sir. It is {time_formatted}. All systems are operational. How can I assist you?"
+            elif 12 <= hour < 17:
+                return f"Good afternoon, sir. All systems are operational. How can I assist you?"
+            elif 17 <= hour < 22:
+                return f"Good evening, sir. All systems are operational. How can I assist you?"
+            else:
+                return f"Good evening, sir. Working late tonight at {time_formatted}? All systems are online. How can I assist you?"
 
         # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
         if (any(k in q for k in ["instagram", "insta", "ig", "reel", "reels"]) or any(k in q for k in ["followers", "caption"])) and not any(w in q for w in ["youtube", "github", "git"]):
@@ -310,20 +390,62 @@ class JarvisBrain:
             return "Your Instagram monitor is initialized, sir. However, your Instagram username is not configured in settings yet. Once added, I will track your followers and posts."
 
         # 3. WhatsApp Integration
-        if any(k in q for k in ["whatsapp", "whats app"]):
+        if any(k in q for k in ["whatsapp", "whats app"]) or (
+            any(w in q for w in ["message", "text"]) and any(w in q for w in ["to", "send"])
+        ):
             if any(w in q for w in ["message", "send", "text"]):
-                clean_target = re.sub(r"\b(on\s+whatsapp|via\s+whatsapp|through\s+whatsapp|whatsapp)\b", "", q).strip()
-                m = re.search(r"(?:message|text|send)\s+(?:to\s+)?(.*?)(?:\s+(?:saying|that|with text)\s+(.*))?$", clean_target)
-                contact = m.group(1).strip() if m and m.group(1) else "your contact"
-                body = m.group(2).strip() if m and m.group(2) else ""
-                url = f"whatsapp://send?text={urllib.parse.quote(body)}" if body else "whatsapp:"
-                try:
-                    subprocess.Popen(["cmd", "/c", "start", url], shell=True)
-                except Exception:
-                    webbrowser.open("https://web.whatsapp.com/")
+                # Clean filler phrases
+                clean_q = re.sub(r"^(?:ok|okay|hey|please|can you|could you|just)\s+", "", q, flags=re.IGNORECASE).strip()
+                # Remove "in whatsapp", "on whatsapp", "via whatsapp", "through whatsapp", "whatsapp"
+                clean_target = re.sub(r"\b(?:in|on|via|through|using)\s+whats\s*app\b|\bwhats\s*app\b", "", clean_q, flags=re.IGNORECASE).strip()
+
+                contact = ""
+                body = ""
+
+                # Match "send [a] message/text to <contact> saying/that <body>"
+                m1 = re.search(
+                    r"(?:send\s+(?:a\s+)?(?:message|text)|message|text|send)\s+to\s+([a-zA-Z0-9_\- ]+?)(?:\s+(?:saying|that|with text|message)\s+(.*))?$",
+                    clean_target,
+                    flags=re.IGNORECASE
+                )
+                if m1:
+                    contact = m1.group(1).strip()
+                    body = m1.group(2).strip() if m1.group(2) else ""
+                else:
+                    # Match "message <contact> <body>" or "text <contact> <body>"
+                    m2 = re.search(
+                        r"^(?:message|text)\s+([a-zA-Z0-9_\- ]+?)(?:\s+(?:saying|that|with text|message)\s+(.*))?$",
+                        clean_target,
+                        flags=re.IGNORECASE
+                    )
+                    if m2:
+                        contact = m2.group(1).strip()
+                        body = m2.group(2).strip() if m2.group(2) else ""
+                    else:
+                        m3 = re.search(r"\bto\s+([a-zA-Z0-9_\- ]+)", clean_target, flags=re.IGNORECASE)
+                        if m3:
+                            contact = m3.group(1).strip()
+
+                # Clean any lingering prepositions
+                contact = re.sub(r"\b(in|on|at|via|to|through)$", "", contact, flags=re.IGNORECASE).strip()
+                if not contact:
+                    contact = "your contact"
+
                 if body:
-                    return f"Drafting your WhatsApp message to {contact} now, sir."
-                return f"Opening WhatsApp chat with {contact} on your desktop now, sir. What message shall I send?"
+                    return JarvisBrain._execute_whatsapp_send(contact, body)
+                else:
+                    # Store pending action state for continuous listening
+                    JarvisBrain.pending_action = {
+                        "type": "whatsapp",
+                        "contact": contact,
+                        "body": "",
+                        "timestamp": time.time()
+                    }
+                    try:
+                        subprocess.Popen(["cmd", "/c", "start", "whatsapp:"], shell=True)
+                    except Exception:
+                        webbrowser.open("https://web.whatsapp.com/")
+                    return f"Opening WhatsApp chat with {contact.title()} on your desktop now, sir. What message shall I send?"
 
             try:
                 subprocess.Popen(["cmd", "/c", "start", "whatsapp:"], shell=True)
@@ -371,6 +493,33 @@ class JarvisBrain:
         # 6. Strict Privacy & Local Sovereignty Confirmation
         if any(w in q for w in ["privacy", "data safe", "data leak", "pass out", "leave my computer", "leave my device", "send my data", "secure my data"]):
             return "Sir, your privacy is absolute. All language models, indexing, and reasoning run 100 percent locally on your RTX GPU and local SSD. Zero personal data, transcripts, or code ever leave your laptop."
+
+        # 7. RAGE Optimizer & Server Threat Analysis (AURA XTREMEZ - 1140892126402596905)
+        server_triggers = [
+            "my server", "aura xtremez", "aura extremez", "xtremez", "1140892126402596905",
+            "server status", "how is my server", "how's my server", "check my server", "check server",
+            "server threat", "server threats", "any threats", "threat analysis", "threats are analysis",
+            "threats analysis", "server analysis", "threats in my server", "threats in server",
+            "server security", "server health", "rage", "clutch nation"
+        ]
+        if any(w in q for w in server_triggers):
+            try:
+                from agents import rage_agent
+                return rage_agent.get_rage_status_summary(query=q)
+            except Exception as ex:
+                return f"Unable to retrieve server telemetry: {ex}"
+
+        # 8. Gmail & Email Inbox Briefings
+        if any(w in q for w in ["email", "emails", "gmail", "inbox"]):
+            try:
+                from agents import email_agent
+                if any(w in q for w in ["read latest", "read email", "read the email", "read my latest"]):
+                    return email_agent.get_latest_email_body()
+                return email_agent.get_unread_emails_summary()
+            except Exception as ex:
+                return f"Unable to access your email: {ex}"
+
+
 
         # 5. YouTube Studio & Creator Dashboard Analytics
         if any(w in q for w in ["youtube studio", "youtube dashboard", "youtube analytics", "youtube stats", "channel stats", "creator dashboard"]):
@@ -521,7 +670,7 @@ class JarvisBrain:
                 res = research_agent.search_live_web(search_term or q, max_results=3)
                 if res.get("status") == "ok" and res.get("snippets"):
                     live_prompt = (
-                        f"{JARVIS_SYSTEM_PROMPT}\n\n"
+                        f"{get_jarvis_system_prompt()}\n\n"
                         f"[Real-Time Live Web Telemetry]:\n{res['snippets']}\n\n"
                         f"User Query: {query}\n"
                         f"Provide a direct, concise 1 to 2 spoken sentence answer using the live real-time web telemetry above:\nJARVIS:"
@@ -549,13 +698,17 @@ class JarvisBrain:
                 pass
 
         # 11. Conversational Query via Ollama Local LLM (Optimized for sub-second response)
+        system_prompt = get_jarvis_system_prompt()
+        now = datetime.datetime.now()
+        hour = now.hour
+
         for model in ["llama3.2:1b", "mistral"]:
             try:
                 res_data = query_ollama_endpoint(
                     "/api/generate",
                     {
                         "model": model,
-                        "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
+                        "prompt": f"{system_prompt}\n\nUser: {query}\nJARVIS:",
                         "stream": False,
                         "options": {
                             "temperature": 0.5,
@@ -573,12 +726,41 @@ class JarvisBrain:
                     if any(ref in answer.lower() for ref in ["can't help with that", "cannot verify", "unable to provide", "i am unable to"]):
                         continue
                     if answer:
+                        # Guard: If LLM hallucinates "Good morning" at night or afternoon, correct it
+                        if hour >= 12 or hour < 4:
+                            sal = "Good evening" if (hour >= 17 or hour < 4) else "Good afternoon"
+                            answer = re.sub(r"\bGood morning\b", sal, answer, flags=re.IGNORECASE)
                         return answer
             except Exception:
                 continue
 
         # Graceful assistant fallback
         return f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active."
+
+    @staticmethod
+    def _execute_whatsapp_send(contact: str, body: str) -> str:
+        """Launches WhatsApp with pre-filled message text, optionally resolving contact phone number from .env."""
+        from dotenv import dotenv_values
+        env_path = os.path.join(BACKEND_DIR, ".env")
+        env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
+
+        # Look for WHATSAPP_CONTACT_<NAME> in .env (e.g., WHATSAPP_CONTACT_ABHISHEK=+919876543210)
+        env_key = f"WHATSAPP_CONTACT_{contact.upper().replace(' ', '_')}"
+        phone = env_vals.get(env_key, "").strip()
+
+        if phone:
+            url = f"whatsapp://send?phone={phone}&text={urllib.parse.quote(body)}"
+            web_url = f"https://web.whatsapp.com/send?phone={phone}&text={urllib.parse.quote(body)}"
+        else:
+            url = f"whatsapp://send?text={urllib.parse.quote(body)}"
+            web_url = "https://web.whatsapp.com/"
+
+        try:
+            subprocess.Popen(["cmd", "/c", "start", url], shell=True)
+        except Exception:
+            webbrowser.open(web_url)
+
+        return f"Drafting your WhatsApp message to {contact.title()} now, sir: \"{body}\"."
 
 
 
@@ -861,6 +1043,32 @@ def main():
 
     threading.Thread(target=_phone_call_watcher, daemon=True).start()
     print("[PHONE WATCHER] Call announcement thread started.")
+
+    # ─── RAGE Telemetry & Violation Watchdog ──────────────
+    def _rage_violation_watcher():
+        """
+        Polls RAGE logs and server telemetry every 8s for new security violations
+        (TrustedActorAbuseHandler, rate limits, critical crashes) and speaks alerts.
+        """
+        print("[RAGE WATCHDOG] 🟢 Monitoring RAGE server telemetry & security logs...")
+        time.sleep(6)  # initial warm-up
+        while True:
+            try:
+                from agents import rage_agent
+                new_violations = rage_agent.poll_new_violations()
+                for v in new_violations:
+                    v_type = v.get("type", "Security Event")
+                    v_msg = v.get("message", "")[:75]
+                    alert = f"Sir, RAGE Security alert: detected {v_type}. {v_msg}"
+                    print(f"[RAGE WATCHDOG] ⚠️ {alert}")
+                    app.voice.speak(alert)
+            except Exception:
+                pass
+            time.sleep(8)
+
+    threading.Thread(target=_rage_violation_watcher, daemon=True).start()
+    print("[RAGE WATCHDOG] Security violation listener active.")
+
 
     def greet():
         time.sleep(1.2)
