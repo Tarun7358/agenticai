@@ -112,7 +112,8 @@ def get_jarvis_system_prompt() -> str:
         f"CRITICAL TEMPORAL CONSTRAINT: It is currently {period}. You must NEVER say 'Good morning' or greet as morning unless the current time is actually morning (4 AM to 12 PM). Greet with '{salutation}' or polite late-night acknowledgment. "
         f"Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
         f"Keep answers concise in 1 to 2 spoken sentences. "
-        f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
+        f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram, Phone Link), files, and system settings. "
+        f"You control Windows Phone Link directly for placing iPhone and mobile calls. Never invent third-party calling services or websites like Voizly. "
         f"Do NOT use markdown, bullet points, asterisks, or robotic formatting."
     )
 
@@ -248,19 +249,19 @@ class JarvisBrain:
     def answer_query(query: str) -> str:
         q = query.lower().strip()
 
-        # 0. Multi-turn Pending Context (e.g. Awaiting WhatsApp message or confirmation)
+        # 0. Multi-turn Pending Context (e.g. Awaiting WhatsApp message or Phone Call number)
         if JarvisBrain.pending_action and (time.time() - JarvisBrain.pending_action.get("timestamp", 0) < 60):
             action = JarvisBrain.pending_action
             if action.get("type") == "whatsapp":
                 contact = action.get("contact", "your contact")
 
-                # Cancellation check
-                if any(w in q for w in ["cancel", "never mind", "nevermind", "leave it", "stop", "abort", "forget it", "no"]):
+                # If user switched to another command like calling, don't trap them in whatsapp
+                if any(w in q for w in ["make a call", "make call", "call to", "call ", "dial", "ring", "phone link"]):
+                    JarvisBrain.pending_action = None
+                elif any(w in q for w in ["cancel", "never mind", "nevermind", "leave it", "stop", "abort", "forget it"]) or (q in ["no", "nope", "negative"] and not any(w in q for w in ["call", "connect", "make", "dial", "send"])):
                     JarvisBrain.pending_action = None
                     return "WhatsApp message canceled, sir. Standing by."
-
-                # User says "send it" before dictating the message
-                if q in ["send it", "send", "send this", "shoot", "ok send it", "just send it"]:
+                elif q in ["send it", "send", "send this", "shoot", "ok send it", "just send it"]:
                     if not action.get("body"):
                         action["timestamp"] = time.time()  # refresh timeout
                         return f"Sir, you haven't dictated the message yet. What message would you like to send to {contact.title()}?"
@@ -268,11 +269,43 @@ class JarvisBrain:
                         body = action["body"]
                         JarvisBrain.pending_action = None
                         return JarvisBrain._execute_whatsapp_send(contact, body)
+                else:
+                    # Message provided by user
+                    dictated = re.sub(r"^(?:tell\s+(?:him|her|them)\s+|say\s+|that\s+)", "", query, flags=re.IGNORECASE).strip()
+                    JarvisBrain.pending_action = None
+                    return JarvisBrain._execute_whatsapp_send(contact, dictated)
 
-                # Message provided by user
-                dictated = re.sub(r"^(?:tell\s+(?:him|her|them)\s+|say\s+|that\s+)", "", query, flags=re.IGNORECASE).strip()
-                JarvisBrain.pending_action = None
-                return JarvisBrain._execute_whatsapp_send(contact, dictated)
+            elif action.get("type") == "phone_call":
+                from agents import iphone_agent
+                contact = action.get("contact", "your contact")
+
+                # Cancellation check
+                if any(w in q for w in ["cancel", "never mind", "nevermind", "leave it", "abort", "forget it"]) or (q in ["no", "nope", "stop", "negative"] and not any(w in q for w in ["call", "connect", "make", "dial", "ring"])):
+                    JarvisBrain.pending_action = None
+                    return "Call connection cancelled, sir. Standing by."
+
+                # User provides phone digits
+                digits = re.sub(r'[^0-9+]', '', q)
+                if len(digits) >= 7:
+                    if contact and contact.lower() not in ["__previous_or_dialer__", "your contact", "phone link"]:
+                        iphone_agent.save_contact(contact, digits)
+                    JarvisBrain.pending_action = None
+                    res = iphone_agent.make_phone_call(digits)
+                    if contact and contact.lower() not in ["__previous_or_dialer__", "your contact", "phone link"]:
+                        return f"Saved contact for {contact.title()} and dialing {digits} via Windows Phone Link now, sir."
+                    return res.get("message", f"Dialing {digits} via Windows Phone Link now, sir.")
+
+                # User says "connect the call", "make the call now", "connect", "dial", "make call"
+                if any(w in q for w in ["connect the call", "connect call", "make the call now", "make the call", "make call", "call now", "dial now", "connect", "just call", "call him", "call her"]):
+                    JarvisBrain.pending_action = None
+                    res = iphone_agent.make_phone_call(contact)
+                    if res.get("status") == "dialed":
+                        return res.get("message")
+                    return f"Connecting the call for {contact.title()} through Windows Phone Link on your screen now, sir."
+
+                # User specifies another call or target: clear pending action and fall through to main logic
+                if any(w in q for w in ["make a call", "make call", "call to", "dial", "ring"]) or re.search(r'\bcall\s+[a-zA-Z0-9+]+', q):
+                    JarvisBrain.pending_action = None
         else:
             JarvisBrain.pending_action = None
 
@@ -455,13 +488,72 @@ class JarvisBrain:
                 webbrowser.open("https://web.whatsapp.com/")
                 return "Opening WhatsApp Web in your browser now, sir."
 
-        # 4. iPhone & Phone Link Integration (Real Factual Telemetry)
-        if any(w in q for w in ["iphone", "phone link", "missed call", "missed calls", "upcoming call", "call info", "calls info", "incoming call", "caller id", "who called", "who was that", "who's calling", "who is calling", "caller", "recent call", "recent calls", "last call", "latest call", "call log", "call logs", "phone call", "phone calls", "any calls", "any missed call"]):
+        # 4A. Phone Link Outgoing Calls & Dialing
+        is_call_log_query = any(w in q for w in [
+            "log", "logs", "history", "missed", "who called", "who was that", "who's calling",
+            "who is calling", "caller id", "recent call", "recent calls", "last call", "latest call",
+            "any calls", "any missed", "incoming call", "caller"
+        ])
+
+        is_calling_intent = False
+        if not is_call_log_query:
+            if any(w in q for w in [
+                "make a call", "make call", "make the call", "place a call", "place call",
+                "connect the call", "connect call", "connect to call", "dial ", "phone call to",
+                "call to ", "start a call", "start call", "ring "
+            ]):
+                is_calling_intent = True
+            elif re.search(r'\b(?:call|dial)\s+([a-zA-Z0-9+]+)', q) and not any(w in q for w in ["what do you call", "call me", "call it"]):
+                is_calling_intent = True
+
+        if is_calling_intent:
             try:
                 from agents import iphone_agent
-                if any(w in q for w in ["connect", "link", "pair", "setup", "integrate", "how to pair"]):
-                    iphone_agent.launch_phone_link()
-                    return "Opening Windows Phone Link for your iPhone now, sir. Select iPhone to pair via Bluetooth with zero data leakage."
+
+                # Clean up query for target extraction
+                clean = re.sub(r'^(?:ok|hey|can you|please|no|now|just|jarvis|aura)\s+', '', q, flags=re.IGNORECASE)
+                clean = re.sub(r'\b(?:using\s+my\s+phone\s+link|using\s+phone\s+link|through\s+phone\s+link|via\s+phone\s+link|on\s+phone\s+link|in\s+phone\s+link)\b', '', clean, flags=re.IGNORECASE).strip()
+
+                target = ""
+                m = re.search(r'\b(?:make\s+a\s+call\s+to|make\s+a\s+phone\s+call\s+to|make\s+call\s+to|place\s+a\s+call\s+to|phone\s+call\s+to|call\s+to|call|dial|ring)\s+([a-zA-Z0-9+ ]+)', clean, re.IGNORECASE)
+                if m:
+                    target = m.group(1).strip()
+                    target = re.sub(r'\b(?:now|please|for me|today|right now)\b', '', target, flags=re.IGNORECASE).strip()
+
+                # If user said "connect the call" or "make the call now" without target, check pending or open dialer
+                if target in ["him", "her", "them", "someone", "the number", ""]:
+                    if JarvisBrain.pending_action and JarvisBrain.pending_action.get("type") == "phone_call":
+                        target = JarvisBrain.pending_action.get("contact", "")
+                    else:
+                        target = ""
+
+                call_res = iphone_agent.make_phone_call(target)
+                if call_res.get("status") == "needs_number":
+                    JarvisBrain.pending_action = {
+                        "type": "phone_call",
+                        "contact": call_res.get("target", target),
+                        "timestamp": time.time()
+                    }
+                else:
+                    JarvisBrain.pending_action = None
+
+                return call_res.get("message", "Connecting your call via Windows Phone Link now, sir.")
+            except Exception as ex:
+                return f"Unable to trigger Phone Link call: {ex}"
+
+        # 4B. Phone Link Setup & Pairing (Only when explicitly asked to pair/setup)
+        if bool(re.search(r'\b(?:pair|how to pair|setup phone link|pair phone|pair iphone|bluetooth)\b', q)):
+            try:
+                from agents import iphone_agent
+                iphone_agent.launch_phone_link()
+                return "Opening Windows Phone Link for your iPhone now, sir. Select iPhone to pair via Bluetooth with zero data leakage."
+            except Exception as ex:
+                return f"Unable to launch Phone Link: {ex}"
+
+        # 4C. iPhone & Phone Link Integration (Real Factual Telemetry & Call Logs)
+        if is_call_log_query or any(w in q for w in ["iphone", "phone link", "phone call", "phone calls", "upcoming call", "call info", "calls info"]):
+            try:
+                from agents import iphone_agent
 
                 # Factual call summary from Laptop 2 / Local Phone Link
                 call_info = get_live_phone_calls_summary(q)
@@ -474,6 +566,20 @@ class JarvisBrain:
                 return "No unread missed calls or active phone events logged in Phone Link right now, sir. Once a call arrives on your iPhone, I will announce the exact caller name immediately."
             except Exception as ex:
                 return f"Unable to retrieve phone records: {ex}"
+
+        # 4D. Contact Management (Zero cloud leakage, stored in data/contacts.json)
+        if any(w in q for w in ["save contact", "add contact", "save phone number", "save number", "remember number"]):
+            try:
+                from agents import iphone_agent
+                digits = re.sub(r'[^0-9+]', '', q)
+                if len(digits) >= 7:
+                    clean_name = re.sub(r'\b(?:save\s+contact|add\s+contact|save\s+phone\s+number|save\s+number|remember\s+number|as|for|the|number|is)\b', '', q, flags=re.IGNORECASE)
+                    clean_name = re.sub(r'[^a-zA-Z\s]', '', clean_name).strip()
+                    if clean_name:
+                        iphone_agent.save_contact(clean_name, digits)
+                        return f"Saved {clean_name.title()}'s phone number locally as {digits}, sir. I can now dial them directly through Phone Link anytime."
+            except Exception as ex:
+                return f"Unable to save contact: {ex}"
 
         # 5. Cross-Laptop LAN Sync & Remote HUD Pop-Up
         if any(w in q for w in ["pop up on this pc", "popup on this pc", "pop up on pc", "show hud on pc", "show hud", "pop up hud", "open hud", "wake pc", "trigger pc", "other laptop", "main pc", "primary pc", "pop up here", "popup here", "relay to pc"]):
