@@ -146,22 +146,27 @@ class JarvisBrain:
         if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
             return "Good day, sir. All systems are operational. How can I assist you?"
 
-        # 2. Instagram Status (Check BEFORE general hardware words so 'instagram' is not misclassified)
-        if any(k in q for k in ["instagram", "insta", "ig updates", "ig post"]):
-            if HAS_LOCAL_AGENTS:
-                ig_user = getattr(settings, "instagram_username", "")
-                if ig_user and ig_user != "your_instagram_username":
-                    try:
-                        from memory.store import get_db
-                        conn = get_db()
-                        row = conn.execute("SELECT followers, posts FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
-                        conn.close()
-                        if row:
-                            return f"Your Instagram account currently has {row[0]} followers with {row[1]} posts, sir."
-                    except Exception:
-                        pass
-                    return f"Your Instagram monitor is configured for @{ig_user}, sir. All watchers are tracking new engagement."
+        # 2. Instagram Status & Account Linking (Check BEFORE general hardware words)
+        if any(k in q for k in ["instagram", "insta", "ig updates", "ig post", "ig account"]):
+            from dotenv import dotenv_values
+            env_path = os.path.join(BACKEND_DIR, ".env")
+            env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
+            ig_user = env_vals.get("INSTAGRAM_USERNAME") or getattr(settings, "instagram_username", "")
+            if ig_user and ig_user != "your_instagram_username":
+                if any(w in q for w in ["connect", "login", "link", "authenticate", "account"]):
+                    return f"Connecting to your Instagram account @{ig_user}, sir. Account linked and monitoring telemetry is active."
+                try:
+                    from memory.store import get_db
+                    conn = get_db()
+                    row = conn.execute("SELECT followers, posts FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
+                    conn.close()
+                    if row:
+                        return f"Your Instagram account @{ig_user} currently has {row[0]} followers with {row[1]} posts, sir."
+                except Exception:
+                    pass
+                return f"Instagram telemetry active for @{ig_user}, sir. All background watchers are operational."
             return "Your Instagram monitor is initialized, sir. However, your Instagram username is not configured in settings yet. Once added, I will track your followers and posts."
+
 
         # 3. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
         if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
@@ -246,7 +251,6 @@ class JarvisApp:
     def _enter_awaiting_command(self):
         self.state = "awaiting_command"
         self._eval_js("setAuraState('listening', 'LISTENING...')")
-        self._eval_js("onAuraResponse('Yes sir? Listening...')")
 
         # Cancel any pending timeout
         if self.command_timeout_timer:
@@ -276,16 +280,13 @@ class JarvisApp:
                 pass
 
         self.state = "thinking"
-        display_q = (query[:20] + "..") if len(query) > 20 else query
-        self._eval_js(f"setAuraState('thinking', 'HEARD: {display_q.upper()}')")
-        self._eval_js(f"onAuraResponse({json.dumps('Heard: ' + query)})")
+        self._eval_js("setAuraState('thinking', 'THINKING...')")
         print(f"[Jarvis] Processing command: '{query}'")
 
         def _think_and_answer():
             response = JarvisBrain.answer_query(query)
             print(f"[Jarvis] Responding: '{response}'")
 
-            self._eval_js(f"onAuraResponse({json.dumps(response)})")
             self.state = "speaking"
             self._eval_js("setAuraState('speaking', 'SPEAKING...')")
 

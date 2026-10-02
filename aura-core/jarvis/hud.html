@@ -153,33 +153,7 @@
       transition: all 0.3s;
     }
 
-    /* Holographic Voice Subtitle (fades in when speaking) */
-    .speech-subtitle {
-      position: absolute;
-      bottom: -46px;
-      max-width: 320px;
-      text-align: center;
-      color: #e6f9ff;
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.5px;
-      line-height: 1.35;
-      text-shadow: 0 0 8px rgba(0, 243, 255, 0.7);
-      background: rgba(4, 14, 28, 0.85);
-      border: 1px solid rgba(0, 243, 255, 0.3);
-      padding: 6px 14px;
-      border-radius: 20px;
-      backdrop-filter: blur(8px);
-      opacity: 0;
-      transform: translateY(6px);
-      transition: all 0.3s ease;
-      pointer-events: none;
-    }
 
-    .speech-subtitle.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
 
     /* ─── Dynamic State Styles ─── */
 
@@ -282,7 +256,6 @@
     </div>
 
     <div class="status-hud" id="statusText">JARVIS ONLINE</div>
-    <div class="speech-subtitle" id="speechSubtitle">"Yes sir, how can I help?"</div>
   </div>
 
   <script>
@@ -394,10 +367,8 @@
     }
     requestAnimationFrame(drawVisualizer);
 
-    // ─── States & Subtitle ───────────────────────────────────────────────────
+    // ─── HUD States ─────────────────────────────────────────────────────────
     const statusText = document.getElementById('statusText');
-    const speechSubtitle = document.getElementById('speechSubtitle');
-    let subtitleTimeout = null;
 
     function setState(state, message) {
       document.body.className = `state-${state}`;
@@ -427,14 +398,7 @@
     };
 
     window.onAuraResponse = function(text) {
-      if (text) {
-        speechSubtitle.innerText = `"${text}"`;
-        speechSubtitle.classList.add('visible');
-        if (subtitleTimeout) clearTimeout(subtitleTimeout);
-        subtitleTimeout = setTimeout(() => {
-          speechSubtitle.classList.remove('visible');
-        }, 8000);
-      }
+      // Subtitle box removed per user request for pure Arc Reactor HUD
     };
 
     // Click on Arc Reactor to trigger manual voice input
