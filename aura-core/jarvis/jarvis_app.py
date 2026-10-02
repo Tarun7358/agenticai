@@ -58,44 +58,28 @@ def check_wake_word(text: str):
     return False, ""
 
 
-def get_best_microphone_index():
-    """Detects and selects headphone/headset audio input, explicitly ignoring webcams."""
+def get_windows_default_microphone():
+    """Queries Windows for the exact default recording device (the device with the green checkmark)."""
     env_idx = os.environ.get("JARVIS_MIC_INDEX")
     if env_idx is not None:
         try:
-            return int(env_idx)
+            return int(env_idx), f"Manual Index [{env_idx}]"
         except Exception:
             pass
 
-    names = sr.Microphone.list_microphone_names()
-    print("[*] Detecting audio input devices for Headphone connection...")
+    try:
+        import pyaudio
+        p = pyaudio.PyAudio()
+        info = p.get_default_input_device_info()
+        idx = info.get("index")
+        name = info.get("name")
+        p.terminate()
+        print(f"[*] Windows Default Recording Device (Green Checkmark): [{idx}] '{name}'")
+        return idx, name
+    except Exception as e:
+        print(f"[!] Warning: Could not query default device ({e}), using system default mapper.")
+        return None, "System Default"
 
-    def is_webcam(name):
-        n_low = name.lower()
-        return any(term in n_low for term in ["logi", "c270", "webcam", "camera"])
-
-    # 1. Primary choice: Standard Headphone / Realtek MME Device (Index 1)
-    for idx in range(len(names)):
-        n_low = names[idx].lower()
-        if is_webcam(names[idx]):
-            continue
-        if "realtek" in n_low and "mic" in n_low and idx < 6:
-            print(f"[*] --> CONNECTED to Headphone input [{idx}]: {names[idx]}")
-            print("[*] Logitech Webcam mic excluded per configuration.")
-            return idx
-
-    # 2. Any explicit USB or Bluetooth headphone/headset device
-    for idx in range(len(names)):
-        n_low = names[idx].lower()
-        if is_webcam(names[idx]):
-            continue
-        if any(term in n_low for term in ["headphone", "headset", "earphone"]):
-            print(f"[*] --> CONNECTED to Headphone input [{idx}]: {names[idx]}")
-            return idx
-
-    # 3. Default fallback to system primary input (excluding webcam)
-    print("[*] Defaulting to system primary input [0]: Microsoft Sound Mapper")
-    return 0
 
 
 
@@ -315,20 +299,21 @@ class JarvisApp:
 
     def start_wake_word_loop(self):
         def _bg_listener():
-            self.mic_index = get_best_microphone_index()
+            self.mic_index, mic_name = get_windows_default_microphone()
             rec = sr.Recognizer()
-            rec.dynamic_energy_threshold = True
+            rec.dynamic_energy_threshold = False  # Fixed threshold to prevent desensitization
             rec.pause_threshold = 0.6
-            rec.phrase_threshold = 0.3
-            rec.non_speaking_duration = 0.4
+            rec.phrase_threshold = 0.2
+            rec.non_speaking_duration = 0.3
 
             try:
                 mic = sr.Microphone(device_index=self.mic_index)
                 with mic as source:
-                    print("[WakeWord] Calibrating microphone for ambient noise...")
-                    rec.adjust_for_ambient_noise(source, duration=1.0)
-                    rec.energy_threshold = max(80, rec.energy_threshold * 0.85)
-                    print(f"[*] Calibration complete: Ambient threshold = {rec.energy_threshold:.1f}")
+                    print(f"[*] Initializing Windows Default Recording Device: {mic_name}...")
+                    rec.adjust_for_ambient_noise(source, duration=0.8)
+                    calibrated = rec.energy_threshold
+                    rec.energy_threshold = max(60, min(320, calibrated * 0.75))
+                    print(f"[*] Microphone calibrated! Ambient noise = {calibrated:.1f}, Active threshold = {rec.energy_threshold:.1f}")
 
                 def callback(recognizer, audio):
                     # If Jarvis is currently speaking, drop audio buffer
@@ -364,7 +349,7 @@ class JarvisApp:
                             self._enter_awaiting_command()
 
                 self.stop_bg_listen = rec.listen_in_background(mic, callback, phrase_time_limit=5)
-                print("[*] Continuous background listener ACTIVE.")
+                print(f"[*] Continuous background listener ACTIVE on '{mic_name}'.")
                 print("[*] Ready: Say 'Hey Aura' or 'Jarvis' anytime...")
             except Exception as e:
                 print(f"[WakeWord] Microphone error: {e}")
