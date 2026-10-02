@@ -322,6 +322,7 @@ def main():
         easy_drag=False,
         on_top=True,
         transparent=True,
+        background_color='#010203',
         js_api=bridge
     )
     app.window = window
