@@ -96,6 +96,16 @@ class JarvisVoice:
     def __init__(self):
         self._lock = threading.Lock()
         self.is_speaking = False
+        self.preferred_voice_id = None
+        try:
+            eng = pyttsx3.init()
+            for v in eng.getProperty('voices'):
+                if "david" in v.name.lower() or "zira" in v.name.lower():
+                    self.preferred_voice_id = v.id
+                    break
+            eng.stop()
+        except Exception:
+            pass
 
     def speak(self, text: str, on_start=None, on_end=None, blocking=False):
         def _run():
@@ -107,21 +117,17 @@ class JarvisVoice:
                     clean = re.sub(r'[*_#`]', '', text)
                     clean = re.sub(r'\[.*?\]\(.*?\)', '', clean)
                     eng = pyttsx3.init()
-                    eng.setProperty('rate', 178)
+                    eng.setProperty('rate', 192)
                     eng.setProperty('volume', 1.0)
-                    voices = eng.getProperty('voices')
-                    for v in voices:
-                        if "david" in v.name.lower() or "zira" in v.name.lower():
-                            eng.setProperty('voice', v.id)
-                            break
+                    if self.preferred_voice_id:
+                        eng.setProperty('voice', self.preferred_voice_id)
                     eng.say(clean)
                     eng.runAndWait()
                     eng.stop()
                 except Exception as ex:
                     print(f"[Voice] Speech error: {ex}")
                 finally:
-                    # Echo prevention pause before re-enabling mic
-                    time.sleep(0.3)
+                    time.sleep(0.15)
                     self.is_speaking = False
                     if on_end:
                         on_end()
@@ -139,14 +145,21 @@ class JarvisBrain:
     def answer_query(query: str) -> str:
         q = query.lower().strip()
 
-        # 1. Identity & Greetings
+        # 1. Instant Fast-Path Common Commands (<5ms latency)
+        if any(k in q for k in ["what can you do", "your capabilities", "what do you do", "features"]):
+            return "I can monitor your laptop specs, track connected Wi-Fi devices, find files, analyze your Instagram reels, upload new clips, and answer questions locally, sir."
+
+        if any(k in q for k in ["how are you", "how are you doing", "status report"]):
+            cpu = psutil.cpu_percent(interval=None)
+            return f"Operating at peak efficiency, sir. CPU is at {cpu} percent, and all background watchers are operational."
+
         if any(k in q for k in ["who are you", "your name", "what are you"]):
             return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX graphics card. At your service, sir."
 
         if any(k in q for k in ["thank you", "thanks jarvis", "thanks aura", "that is all", "that's all", "go to sleep", "sleep mode", "standby", "goodbye", "bye jarvis"]):
             return "Always a pleasure, sir. Standing by."
 
-        if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
+        if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening", "ok", "okay", "alright", "cool"]):
             return "Good day, sir. All systems are operational. How can I assist you?"
 
         # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
@@ -254,24 +267,31 @@ class JarvisBrain:
                 except Exception:
                     pass
 
-        # 7. Conversational Query via Ollama Local LLM
-        try:
-            resp = requests.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
-                    "stream": False,
-                    "options": {"temperature": 0.6, "num_ctx": 2048}
-                },
-                timeout=20
-            )
-            if resp.status_code == 200:
-                answer = resp.json().get("response", "").strip()
-                if answer:
-                    return answer
-        except Exception:
-            pass
+        # 7. Conversational Query via Ollama Local LLM (Optimized for RTX 2050 sub-second response)
+        for model in ["llama3.2:1b", "mistral"]:
+            try:
+                resp = requests.post(
+                    "http://localhost:11434/api/generate",
+                    json={
+                        "model": model,
+                        "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.5,
+                            "num_predict": 30,
+                            "num_ctx": 384,
+                            "top_k": 20
+                        },
+                        "keep_alive": "60m"
+                    },
+                    timeout=8
+                )
+                if resp.status_code == 200:
+                    answer = resp.json().get("response", "").strip()
+                    if answer:
+                        return answer
+            except Exception:
+                continue
 
         # Graceful assistant fallback
         return f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active."
@@ -385,9 +405,9 @@ class JarvisApp:
             self.mic_index, mic_name = get_windows_default_microphone()
             rec = sr.Recognizer()
             rec.dynamic_energy_threshold = False  # Fixed threshold to prevent desensitization
-            rec.pause_threshold = 0.6
-            rec.phrase_threshold = 0.2
-            rec.non_speaking_duration = 0.3
+            rec.pause_threshold = 0.45
+            rec.phrase_threshold = 0.15
+            rec.non_speaking_duration = 0.2
 
             try:
                 mic = sr.Microphone(device_index=self.mic_index)
