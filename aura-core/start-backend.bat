@@ -33,8 +33,8 @@ if not exist ".env" (
 if not exist "data" mkdir data
 
 echo.
-echo [*] Starting AURA backend on http://127.0.0.1:8000
-echo [*] API docs: http://127.0.0.1:8000/docs
+echo [*] Starting AURA backend on port 8000 (accessible locally & over Wi-Fi)
+echo [*] API docs: http://localhost:8000/docs
 echo.
 set PYTHONIOENCODING=utf-8
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload

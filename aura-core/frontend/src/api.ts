@@ -1,4 +1,5 @@
-const API = 'http://127.0.0.1:8000';
+const host = (typeof window !== 'undefined' && window.location.hostname) ? window.location.hostname : '127.0.0.1';
+const API = `http://${host}:8000`;
 
 export async function getStatus() {
   const res = await fetch(`${API}/api/status`);
