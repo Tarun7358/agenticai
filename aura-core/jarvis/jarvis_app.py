@@ -59,7 +59,7 @@ def check_wake_word(text: str):
 
 
 def get_best_microphone_index():
-    """Detects and selects the best active input device (prioritizing webcam/USB with signal)."""
+    """Detects and selects headphone/headset audio input, explicitly ignoring webcams."""
     env_idx = os.environ.get("JARVIS_MIC_INDEX")
     if env_idx is not None:
         try:
@@ -68,40 +68,62 @@ def get_best_microphone_index():
             pass
 
     names = sr.Microphone.list_microphone_names()
-    # 1. Look for webcam / usb / logitech devices first
-    priority_indices = []
+    print("[*] Detecting audio input devices for Headphone connection...")
+
+    def is_webcam(name):
+        n_low = name.lower()
+        return any(term in n_low for term in ["logi", "c270", "webcam", "camera"])
+
+    # 1. Look for explicit Headphone / Headset / Realtek devices (excluding webcams)
+    headphone_candidates = []
     for idx, name in enumerate(names):
         n_low = name.lower()
-        if any(term in n_low for term in ["logi", "c270", "usb", "headset", "webcam"]):
-            priority_indices.append(idx)
+        if is_webcam(name):
+            continue
+        if any(term in n_low for term in ["headphone", "headset", "earphone", "realtek"]):
+            if "mic" in n_low or "input" in n_low:
+                headphone_candidates.append(idx)
 
-    # Test priority devices first to see if any has signal
-    for idx in priority_indices:
+    # Test headphone candidates and pick the one with highest active signal
+    best_idx = None
+    best_lvl = -1
+    for idx in headphone_candidates:
         try:
             mic = sr.Microphone(device_index=idx)
             with mic as source:
                 levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(4)]
                 avg_lvl = sum(levels) / len(levels)
-                if avg_lvl > 50:
-                    print(f"[*] Selected active microphone [{idx}]: {names[idx]} (Signal RMS: {avg_lvl:.1f})")
-                    return idx
+                print(f"[*] Headphone candidate [{idx}] '{names[idx]}': RMS = {avg_lvl:.1f}")
+                if avg_lvl > best_lvl:
+                    best_lvl = avg_lvl
+                    best_idx = idx
         except Exception:
             pass
 
-    # 2. Test fallback input devices
+    if best_idx is not None:
+        print(f"[*] --> CONNECTED to Headphone input [{best_idx}]: {names[best_idx]} (RMS: {best_lvl:.1f})")
+        print("[*] Logitech Webcam mic excluded per configuration.")
+        return best_idx
+
+    # 2. General fallback excluding webcams
     for idx in range(len(names)):
-        n_low = names[idx].lower()
-        if "input" in n_low or "mic" in n_low:
+        if is_webcam(names[idx]):
+            continue
+        if "input" in names[idx].lower() or "mic" in names[idx].lower():
             try:
                 mic = sr.Microphone(device_index=idx)
                 with mic as source:
                     levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(3)]
                     avg_lvl = sum(levels) / len(levels)
-                    if avg_lvl > 50:
-                        print(f"[*] Selected fallback microphone [{idx}]: {names[idx]} (Signal RMS: {avg_lvl:.1f})")
-                        return idx
+                    if avg_lvl > best_lvl:
+                        best_lvl = avg_lvl
+                        best_idx = idx
             except Exception:
                 pass
+
+    if best_idx is not None:
+        print(f"[*] --> CONNECTED to input [{best_idx}]: {names[best_idx]}")
+        return best_idx
 
     print("[*] Defaulting to system primary microphone.")
     return None
