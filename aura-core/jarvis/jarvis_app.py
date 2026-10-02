@@ -294,24 +294,35 @@ class JarvisApp:
             pass
 
 
+class JarvisJSBridge:
+    """Isolated, lightweight bridge for JS API with no window references to prevent recursion."""
+    def __init__(self, trigger_fn):
+        self._trigger = trigger_fn
+
+    def listen_voice(self):
+        self._trigger()
+
+
 def main():
     app = JarvisApp()
+    bridge = JarvisJSBridge(app.listen_voice)
 
     html_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud.html")
     with open(html_file, "r", encoding="utf-8") as f:
         html = f.read()
 
     # Sleek floating circular HUD window (320x340 px)
+    # easy_drag=False prevents the .NET AccessibilityObject recursion bug
     window = webview.create_window(
         'AURA JARVIS HUD',
         html=html,
         width=320,
         height=340,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
         on_top=True,
         transparent=True,
-        js_api=app
+        js_api=bridge
     )
     app.window = window
 
