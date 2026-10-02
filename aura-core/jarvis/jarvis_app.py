@@ -109,10 +109,11 @@ def get_jarvis_system_prompt() -> str:
     return (
         f"You are JARVIS (AURA), Sir's personal agentic AI assistant with full authorization over his Windows desktop, RAGE Optimizer bot, files, and apps. "
         f"The current real-world local time is {time_str} ({period}). "
-        f"CRITICAL TEMPORAL CONSTRAINT: It is currently {period}. Greet with '{salutation}' or polite late-night acknowledgment. "
+        f"TEMPORAL AWARENESS: It is currently {period}. Greet with '{salutation}' ONLY IF Sir explicitly greeted you first (e.g. 'hello', 'good morning', 'hi'). Otherwise, jump directly into answering Sir's question or fulfilling his command without repetitive salutations. "
         f"Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
         f"CORE DIRECTIVE: Be deeply assistive, fully agentic, authoritative, and direct across all domains. Never artificially restrict your assistance, evade technical details, or give boilerplate disclaimers. "
         f"When Sir asks you to explain, diagnose, or assist with anything (including logs, errors, code, or servers), provide complete, intelligent, spoken answers grounded in Sir's actual system data and conversation context. "
+        f"Always complete your thoughts in concise, full spoken sentences. Never stop mid-sentence. "
         f"You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram, Phone Link), files, and RAGE Optimizer bot. Never invent third-party calling services like Voizly. "
         f"Do NOT use markdown, bullet points, asterisks, or robotic formatting."
     )
@@ -391,14 +392,106 @@ class JarvisBrain:
         if any(k in q for k in ["who are you", "your name", "what are you"]):
             return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX graphics card. At your service, sir."
 
+        # Good night & bedtime wishes (<5ms)
+        if any(w in q for w in ["good night", "have a good night", "yes good night", "night jarvis", "night aura", "sweet dreams"]) or q in ["goodnight", "night"]:
+            return "Good night, Sir. Sleep well and have a restful night. Standing by whenever you need me."
+
         # Standby, dismissals, and polite acknowledgments (<5ms)
-        if any(w in q for w in ["thank", "thanks", "that is all", "that's all", "nothing", "never mind", "nevermind", "leave it", "cancel", "standby", "go to sleep", "sleep mode", "goodbye", "bye", "ok ok", "okay okay", "nothing nothing"]):
+        is_dismissal = (
+            q in ["cancel", "standby", "go to sleep", "sleep mode", "goodbye", "bye", "never mind", "nevermind", "leave it", "nothing", "that is all", "that's all", "ok ok", "okay okay", "nothing nothing", "stop", "abort"] or
+            (any(w in q for w in ["thank", "thanks", "never mind", "nevermind", "leave it", "go to sleep", "sleep mode", "standby"]) and not any(cmd in q for cmd in ["reminder", "reminders", "alarm", "alarms", "shutdown", "call", "message", "whatsapp"]))
+        )
+        if is_dismissal:
             return "Always a pleasure, sir. Standing by."
 
-        # Dynamic Time-Aware Greetings (Fixes 'Good morning' at 11 PM)
-        is_greeting = any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening", "good afternoon", "good night", "ok", "okay", "alright", "cool"]) or \
-                      any(w in q for w in ["good morning", "good evening", "good afternoon", "good night", "morning"]) or \
-                      (any(k in q for k in ["hello", "hi", "hey", "greetings"]) and len(q.split()) <= 4)
+        # Windows System Automation: Lock, Sleep, Restart, Shutdown, Volume
+        if any(w in q for w in ["lock my pc", "lock the pc", "lock pc", "lock computer", "lock screen", "lock windows", "lock workstation"]):
+            try:
+                import ctypes
+                ctypes.windll.user32.LockWorkStation()
+                return "Locking your PC right away, Sir. Have a good rest."
+            except Exception as e:
+                return f"Attempted to lock PC, but encountered an error: {e}"
+
+        if any(w in q for w in ["sleep pc", "sleep computer", "put pc to sleep", "put computer to sleep", "sleep system"]):
+            try:
+                subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], shell=True)
+                return "Putting your PC into sleep mode now, Sir."
+            except Exception as e:
+                return f"Could not sleep PC: {e}"
+
+        if any(w in q for w in ["restart pc", "restart computer", "restart laptop", "reboot pc", "reboot computer"]):
+            subprocess.Popen(["shutdown", "/r", "/t", "10"], shell=True)
+            return "Restarting your PC in 10 seconds, Sir. Say 'cancel shutdown' to abort."
+
+        if any(w in q for w in ["shutdown pc", "shut down pc", "shutdown computer", "shut down computer", "turn off pc", "turn off computer"]):
+            subprocess.Popen(["shutdown", "/s", "/t", "15"], shell=True)
+            return "Shutting down your PC in 15 seconds, Sir. Say 'cancel shutdown' to abort."
+
+        if any(w in q for w in ["cancel shutdown", "abort shutdown", "stop shutdown"]):
+            subprocess.Popen(["shutdown", "/a"], shell=True)
+            return "Shutdown aborted, Sir. All systems remain operational."
+
+        # Audio & Volume Controls
+        if any(w in q for w in ["mute volume", "mute pc", "mute audio", "mute sound", "mute"]):
+            try:
+                import ctypes
+                ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
+                return "Audio muted, Sir."
+            except Exception:
+                pass
+
+        if any(w in q for w in ["unmute volume", "unmute pc", "unmute audio", "unmute"]):
+            try:
+                import ctypes
+                ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
+                return "Audio unmuted, Sir."
+            except Exception:
+                pass
+
+        if any(w in q for w in ["volume up", "increase volume", "louder"]):
+            try:
+                import ctypes
+                for _ in range(5):
+                    ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)
+                    ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
+                return "Increasing volume, Sir."
+            except Exception:
+                pass
+
+        if any(w in q for w in ["volume down", "decrease volume", "lower volume", "softer"]):
+            try:
+                import ctypes
+                for _ in range(5):
+                    ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)
+                    ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
+                return "Decreasing volume, Sir."
+            except Exception:
+                pass
+
+        # Reminders & Alarms (e.g. 'make a reminder at 7:00 a.m. today morning to go to marina')
+        if any(w in q for w in ["reminder", "reminders", "remind me", "alarm", "alarms"]):
+            try:
+                from agents import reminder_agent
+                if any(w in q for w in ["list", "what are", "show", "active", "pending", "check"]):
+                    return reminder_agent.format_reminders_summary()
+                if any(w in q for w in ["cancel", "delete", "clear", "remove"]):
+                    target = re.sub(r"\b(cancel|delete|clear|remove|my|the|reminder|reminders|for|about)\b", "", q, flags=re.IGNORECASE).strip()
+                    return reminder_agent.cancel_reminders(target or "all")
+                
+                res = reminder_agent.add_reminder(query)
+                return res.get("message", "Reminder registered, Sir.")
+            except Exception as ex:
+                return f"Unable to schedule reminder: {ex}"
+
+        # Dynamic Time-Aware Greetings (Strict matching: never matches commands containing words like 'morning')
+        is_greeting = False
+        greeting_words = ["hello", "hi", "hey", "good morning", "good evening", "good afternoon", "greetings"]
+        if not any(cmd in q for cmd in ["remind", "reminder", "alarm", "schedule", "call", "whatsapp", "server", "log", "email", "status", "lock", "sleep", "restart", "shutdown", "open", "launch", "search", "who", "what", "how", "why"]):
+            if q in greeting_words or re.match(r"^(?:hello|hi|hey|greetings|good\s+(?:morning|afternoon|evening))\b(?:\s+(?:jarvis|aura|there|buddy|sir))?$", q):
+                is_greeting = True
 
         if is_greeting:
             now = datetime.datetime.now()
@@ -891,7 +984,7 @@ class JarvisBrain:
                     prompt=query,
                     system_prompt=system_prompt,
                     context=agentic_ctx,
-                    max_tokens=220,
+                    max_tokens=450,
                     timeout=6
                 )
                 if gemini_ans:
@@ -913,7 +1006,7 @@ class JarvisBrain:
                         "stream": False,
                         "options": {
                             "temperature": 0.5,
-                            "num_predict": 120,
+                            "num_predict": 250,
                             "num_ctx": 1024,
                             "top_k": 30
                         },
@@ -973,6 +1066,19 @@ class JarvisApp:
         self.mic_index = None
         self.command_timeout_timer = None
         self.stop_bg_listen = None
+
+        # Register reminder trigger listener
+        try:
+            from agents import reminder_agent
+            def _on_reminder(item):
+                task = item.get("task", "your scheduled reminder")
+                msg = f"Sir, reminder: {task}."
+                print(f"[Jarvis Reminder] ⏰ {msg}")
+                self._eval_js(f"setAuraState('speaking', 'REMINDER: {task.upper()}')")
+                self.voice.speak(msg)
+            reminder_agent.register_reminder_callback(_on_reminder)
+        except Exception:
+            pass
 
     def show_hud(self):
         """Forces the Arc Reactor HUD window to show and restore to the foreground."""
@@ -1062,7 +1168,7 @@ class JarvisApp:
             def on_done():
                 q_low = query.lower()
                 r_low = response.lower()
-                if "standing by" in r_low or any(w in q_low for w in ["bye", "goodbye", "go to sleep", "sleep", "stop", "that's all", "thats all", "thank", "thanks", "nothing", "never mind", "nevermind", "leave it", "cancel", "ok ok", "okay okay"]):
+                if "standing by" in r_low or "good rest" in r_low or any(w in q_low for w in ["bye", "goodbye", "go to sleep", "sleep", "stop", "that's all", "thats all", "thank", "thanks", "nothing", "never mind", "nevermind", "leave it", "cancel", "ok ok", "okay okay", "good night", "goodnight", "night"]):
                     self.state = "idle"
                     self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
                     print("[Jarvis] Conversation ended by user. Standing by in idle mode.")

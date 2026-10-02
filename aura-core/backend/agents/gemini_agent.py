@@ -58,7 +58,7 @@ def query_gemini(
     prompt: str,
     system_prompt: str = "",
     context: str = "",
-    max_tokens: int = 100,
+    max_tokens: int = 450,
     timeout: int = 7
 ) -> Optional[str]:
     """
@@ -105,6 +105,13 @@ def query_gemini(
                         ans = parts[0]["text"].strip()
                         # Clean markdown formatting like asterisks or quotes
                         ans = re.sub(r'[*_~`]', '', ans).strip()
+                        # Ensure no truncated incomplete sentence fragments (e.g. "It consisted of")
+                        if ans and ans[-1] not in '.!?':
+                            last_punct = max(ans.rfind('.'), ans.rfind('!'), ans.rfind('?'))
+                            if last_punct > 50:
+                                ans = ans[:last_punct + 1].strip()
+                            else:
+                                ans = ans + "."
                         return ans
             elif resp.status_code in (404, 429, 503):
                 # Try next candidate model
