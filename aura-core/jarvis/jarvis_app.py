@@ -326,7 +326,8 @@ class JarvisBrain:
                 return f"Good evening, sir. Working late tonight at {time_formatted}? All systems are online. How can I assist you?"
 
         # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
-        if (any(k in q for k in ["instagram", "insta", "ig", "reel", "reels"]) or any(k in q for k in ["followers", "caption"])) and not any(w in q for w in ["youtube", "github", "git"]):
+        is_instagram_query = bool(re.search(r"\b(instagram|insta|ig|reels?|followers?|captions?)\b", q)) and not any(w in q for w in ["youtube", "github", "git"])
+        if is_instagram_query:
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
             env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
@@ -697,11 +698,30 @@ class JarvisBrain:
             except Exception:
                 pass
 
-        # 11. Conversational Query via Ollama Local LLM (Optimized for sub-second response)
+        # 11. Sovereign Hybrid AI Inference: Gemini Flash Lite (Fastest) with Ollama Local Fallback
         system_prompt = get_jarvis_system_prompt()
         now = datetime.datetime.now()
         hour = now.hour
 
+        # Try ultra-fast Gemini Flash first (sub-second response, local privacy preserved)
+        try:
+            from agents import gemini_agent
+            if gemini_agent.is_gemini_active():
+                gemini_ans = gemini_agent.query_gemini(
+                    prompt=query,
+                    system_prompt=system_prompt,
+                    max_tokens=75,
+                    timeout=5
+                )
+                if gemini_ans:
+                    if hour >= 12 or hour < 4:
+                        sal = "Good evening" if (hour >= 17 or hour < 4) else "Good afternoon"
+                        gemini_ans = re.sub(r"\bGood morning\b", sal, gemini_ans, flags=re.IGNORECASE)
+                    return gemini_ans
+        except Exception:
+            pass
+
+        # Fallback to local Ollama on RTX GPU if Gemini is unavailable or offline
         for model in ["llama3.2:1b", "mistral"]:
             try:
                 res_data = query_ollama_endpoint(
