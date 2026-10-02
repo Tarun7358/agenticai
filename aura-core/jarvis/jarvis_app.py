@@ -455,8 +455,9 @@ class JarvisBrain:
                         f"User Query: {query}\n"
                         f"Provide a direct, concise 1 to 2 spoken sentence answer using the live real-time web telemetry above:\nJARVIS:"
                     )
+                    ollama_url = os.environ.get("OLLAMA_BASE_URL") or getattr(settings, "ollama_base_url", "http://localhost:11434").rstrip('/')
                     resp = requests.post(
-                        "http://localhost:11434/api/generate",
+                        f"{ollama_url}/api/generate",
                         json={
                             "model": "mistral",
                             "prompt": live_prompt,
@@ -477,11 +478,12 @@ class JarvisBrain:
             except Exception:
                 pass
 
-        # 11. Conversational Query via Ollama Local LLM (Optimized for RTX 2050 sub-second response)
+        # 11. Conversational Query via Ollama Local LLM (Optimized for sub-second response)
+        ollama_url = os.environ.get("OLLAMA_BASE_URL") or getattr(settings, "ollama_base_url", "http://localhost:11434").rstrip('/')
         for model in ["llama3.2:1b", "mistral"]:
             try:
                 resp = requests.post(
-                    "http://localhost:11434/api/generate",
+                    f"{ollama_url}/api/generate",
                     json={
                         "model": model,
                         "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
