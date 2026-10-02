@@ -402,9 +402,9 @@ class JarvisBrain:
             except Exception:
                 pass
 
-        # 10. Anonymous Public Knowledge / Web Research
-        search_match = re.search(r"\b(?:search online for|search web for|look up|what is|who is|explain)\s+(.+)$", q)
-        if search_match and not any(w in q for w in ["your name", "who are you", "what can you do", "my name", "the time", "system status"]):
+        # 10. Explicit Web Research
+        search_match = re.search(r"\b(?:search online for|search web for|search the internet for|look up online)\s+(.+)$", q)
+        if search_match:
             topic = search_match.group(1).strip(" ?.")
             try:
                 from agents import research_agent
@@ -428,8 +428,8 @@ class JarvisBrain:
                         "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
                         "stream": False,
                         "options": {
-                            "temperature": 0.6,
-                            "num_predict": 75,
+                            "temperature": 0.5,
+                            "num_predict": 60,
                             "num_ctx": 512,
                             "top_k": 30
                         },
@@ -439,6 +439,9 @@ class JarvisBrain:
                 )
                 if resp.status_code == 200:
                     answer = resp.json().get("response", "").strip()
+                    # If llama3.2 gives a canned refusal, seamlessly fall through to mistral
+                    if any(ref in answer.lower() for ref in ["can't help with that", "cannot verify", "unable to provide", "i am unable to"]):
+                        continue
                     if answer:
                         return answer
             except Exception:
