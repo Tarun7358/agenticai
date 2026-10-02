@@ -281,7 +281,23 @@ class JarvisBrain:
             except Exception:
                 pass
 
-        # 5. Strict Privacy & Local Sovereignty Confirmation
+        # 5. Cross-Laptop LAN Sync & Remote HUD Pop-Up
+        if any(w in q for w in ["pop up on this pc", "popup on this pc", "pop up on pc", "show hud on pc", "show hud", "pop up hud", "open hud", "wake pc", "trigger pc", "other laptop", "main pc", "primary pc", "pop up here", "popup here", "relay to pc"]):
+            try:
+                from agents import lan_sync
+                target_cmd = re.sub(r"\b(pop up on this pc|popup on this pc|pop up on pc|show hud on pc|show hud|open hud|open on pc|relay to pc|send to pc|wake pc|trigger pc)\b", "", q).strip()
+                res = lan_sync.trigger_remote_pc_hud(query=target_cmd)
+                if res.get("status") == "ok":
+                    if target_cmd:
+                        return f"Connecting across local network, sir. The HUD is active on your primary PC executing '{target_cmd}'."
+                    return "Connecting across local network, sir. The holographic Arc Reactor HUD is now active on your primary PC."
+                else:
+                    lan_sync.bring_hud_to_front()
+                    return "Holographic Arc Reactor HUD brought to the foreground on this PC, sir."
+            except Exception as ex:
+                return f"LAN synchronization encountered an issue: {ex}"
+
+        # 6. Strict Privacy & Local Sovereignty Confirmation
         if any(w in q for w in ["privacy", "data safe", "data leak", "pass out", "leave my computer", "leave my device", "send my data", "secure my data"]):
             return "Sir, your privacy is absolute. All language models, indexing, and reasoning run 100 percent locally on your RTX GPU and local SSD. Zero personal data, transcripts, or code ever leave your laptop."
 
@@ -504,6 +520,20 @@ class JarvisApp:
         self.command_timeout_timer = None
         self.stop_bg_listen = None
 
+    def show_hud(self):
+        """Forces the Arc Reactor HUD window to show and restore to the foreground."""
+        try:
+            from agents.lan_sync import bring_hud_to_front
+            bring_hud_to_front()
+        except Exception:
+            pass
+        if self.window:
+            try:
+                self.window.restore()
+                self.window.show()
+            except Exception:
+                pass
+
     def trigger_listening(self):
         """Called when user clicks HUD Arc Reactor or presses hotkey."""
         if self.state in ["thinking", "speaking"] or self.voice.is_speaking:
@@ -702,6 +732,14 @@ def main():
 
     app.start_wake_word_loop()
     app.setup_hotkeys()
+
+    # Start LAN Node Sync (Cross-PC triggers & Auto-Discovery)
+    try:
+        from agents.lan_sync import start_lan_server, start_udp_discovery_responder
+        start_lan_server(app)
+        start_udp_discovery_responder()
+    except Exception as ex:
+        print(f"[LAN Sync] Listener start error: {ex}")
 
     def greet():
         time.sleep(1.2)
