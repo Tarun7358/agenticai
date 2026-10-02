@@ -2,6 +2,7 @@
 AURA JARVIS HUD — Pure Iron Man Arc Reactor Voice Assistant
 - Holographic Arc Reactor Visual (Pure HUD, No Chatbot Clutter)
 - Always-On Background Wake-Word ("Hey Aura" / "Jarvis")
+- Auto-Detects Active Microphone (Logitech C270 / USB / Realtek)
 - Real-time Speech Recognition + Spoken Human-like Assistant Dialogue
 - Offline Zero-Latency Voice Engine (pyttsx3)
 - Instant System, Network, and File Intelligence
@@ -14,6 +15,7 @@ import json
 import threading
 import datetime
 import re
+import audioop
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(BASE_DIR, "backend")
@@ -39,7 +41,71 @@ try:
 except Exception as e:
     HAS_LOCAL_AGENTS = False
 
-WAKE_WORDS = ["hey aura", "aura", "jarvis", "hey jarvis", "ok aura", "hello aura"]
+
+WAKE_PATTERNS = [
+    r"\b(hey|hi|ok|hello|yo|ay)?\s*(aura|ora|ara|laura|aora|aurora)\b",
+    r"\b(hey|hi|ok|hello|yo)?\s*(jarvis|travis|service|jarves)\b",
+]
+
+def check_wake_word(text: str):
+    """Checks if text contains a wake word, returning (is_wake, trailing_command)."""
+    text = text.lower().strip()
+    for pat in WAKE_PATTERNS:
+        m = re.search(pat, text)
+        if m:
+            trailing = text[m.end():].strip(" ,.?")
+            return True, trailing
+    return False, ""
+
+
+def get_best_microphone_index():
+    """Detects and selects the best active input device (prioritizing webcam/USB with signal)."""
+    env_idx = os.environ.get("JARVIS_MIC_INDEX")
+    if env_idx is not None:
+        try:
+            return int(env_idx)
+        except Exception:
+            pass
+
+    names = sr.Microphone.list_microphone_names()
+    # 1. Look for webcam / usb / logitech devices first
+    priority_indices = []
+    for idx, name in enumerate(names):
+        n_low = name.lower()
+        if any(term in n_low for term in ["logi", "c270", "usb", "headset", "webcam"]):
+            priority_indices.append(idx)
+
+    # Test priority devices first to see if any has signal
+    for idx in priority_indices:
+        try:
+            mic = sr.Microphone(device_index=idx)
+            with mic as source:
+                levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(4)]
+                avg_lvl = sum(levels) / len(levels)
+                if avg_lvl > 50:
+                    print(f"[*] Selected active microphone [{idx}]: {names[idx]} (Signal RMS: {avg_lvl:.1f})")
+                    return idx
+        except Exception:
+            pass
+
+    # 2. Test fallback input devices
+    for idx in range(len(names)):
+        n_low = names[idx].lower()
+        if "input" in n_low or "mic" in n_low:
+            try:
+                mic = sr.Microphone(device_index=idx)
+                with mic as source:
+                    levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(3)]
+                    avg_lvl = sum(levels) / len(levels)
+                    if avg_lvl > 50:
+                        print(f"[*] Selected fallback microphone [{idx}]: {names[idx]} (Signal RMS: {avg_lvl:.1f})")
+                        return idx
+            except Exception:
+                pass
+
+    print("[*] Defaulting to system primary microphone.")
+    return None
+
 
 JARVIS_SYSTEM_PROMPT = (
     "You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal assistant. "
@@ -53,25 +119,12 @@ class JarvisVoice:
     """Offline, human-like voice synthesis using pyttsx3."""
     def __init__(self):
         self._lock = threading.Lock()
-        self.engine = None
-        self._init_engine()
+        self.is_speaking = False
 
-    def _init_engine(self):
-        try:
-            self.engine = pyttsx3.init()
-            self.engine.setProperty('rate', 178)  # Natural human speech cadence
-            self.engine.setProperty('volume', 1.0)
-            voices = self.engine.getProperty('voices')
-            for v in voices:
-                if "david" in v.name.lower() or "zira" in v.name.lower():
-                    self.engine.setProperty('voice', v.id)
-                    break
-        except Exception as e:
-            print(f"[Voice] Init error: {e}")
-
-    def speak(self, text: str, on_start=None, on_end=None):
+    def speak(self, text: str, on_start=None, on_end=None, blocking=False):
         def _run():
             with self._lock:
+                self.is_speaking = True
                 if on_start:
                     on_start()
                 try:
@@ -80,17 +133,27 @@ class JarvisVoice:
                     eng = pyttsx3.init()
                     eng.setProperty('rate', 178)
                     eng.setProperty('volume', 1.0)
+                    voices = eng.getProperty('voices')
+                    for v in voices:
+                        if "david" in v.name.lower() or "zira" in v.name.lower():
+                            eng.setProperty('voice', v.id)
+                            break
                     eng.say(clean)
                     eng.runAndWait()
                     eng.stop()
                 except Exception as ex:
                     print(f"[Voice] Speech error: {ex}")
                 finally:
+                    # Echo prevention pause before re-enabling mic
+                    time.sleep(0.3)
+                    self.is_speaking = False
                     if on_end:
                         on_end()
 
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
+        if blocking:
+            _run()
+        else:
+            threading.Thread(target=_run, daemon=True).start()
 
 
 class JarvisBrain:
@@ -108,7 +171,7 @@ class JarvisBrain:
             return "Good day, sir. All systems are operational. How can I assist you?"
 
         # 2. System / Hardware diagnostics
-        if any(k in q for k in ["system status", "laptop", "battery", "cpu", "ram", "specs", "how are you running"]):
+        if any(k in q for k in ["system status", "laptop", "battery", "cpu", "ram", "specs", "how are you running", "hardware"]):
             cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
             battery = psutil.sensors_battery()
@@ -185,59 +248,68 @@ class JarvisApp:
     def __init__(self):
         self.window = None
         self.voice = JarvisVoice()
-        self.recognizer = sr.Recognizer()
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.energy_threshold = 300
-        self.is_listening = False
-        self.is_processing = False
+        self.state = "idle"  # "idle", "awaiting_command", "thinking", "speaking"
+        self.mic_index = None
+        self.command_timeout_timer = None
+        self.stop_bg_listen = None
 
-    def listen_voice(self):
-        threading.Thread(target=self._listen_and_respond, daemon=True).start()
-
-    def _listen_and_respond(self):
-        if self.is_listening or self.is_processing:
+    def trigger_listening(self):
+        """Called when user clicks HUD Arc Reactor or presses hotkey."""
+        if self.state in ["thinking", "speaking"] or self.voice.is_speaking:
             return
-        self.is_listening = True
+        print("[Jarvis] Manual trigger activated (Arc Reactor clicked / hotkey)")
+        self._enter_awaiting_command()
 
-        try:
-            self._eval_js("setAuraState('listening', 'LISTENING...')")
-            with sr.Microphone() as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio = self.recognizer.listen(source, timeout=6, phrase_time_limit=10)
+    def _enter_awaiting_command(self):
+        self.state = "awaiting_command"
+        self._eval_js("setAuraState('listening', 'LISTENING...')")
 
-            self._eval_js("setAuraState('thinking', 'PROCESSING...')")
+        # Cancel any pending timeout
+        if self.command_timeout_timer:
             try:
-                text = self.recognizer.recognize_google(audio)
+                self.command_timeout_timer.cancel()
             except Exception:
-                text = ""
+                pass
 
-            if text:
-                print(f"[Jarvis] Heard: '{text}'")
-                self._process_query(text)
-            else:
+        def _timeout():
+            if self.state == "awaiting_command":
+                print("[Jarvis] Command timeout (no speech detected). Returning to idle.")
+                self.state = "idle"
                 self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
-                self.voice.speak("I am here whenever you need me, sir.")
-        except Exception as e:
-            print(f"[Jarvis] Listen error: {e}")
-            self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
-        finally:
-            self.is_listening = False
+
+        self.command_timeout_timer = threading.Timer(7.0, _timeout)
+        self.command_timeout_timer.daemon = True
+        self.command_timeout_timer.start()
+
+        # Prompt the user
+        self.voice.speak("Yes sir?")
 
     def _process_query(self, query: str):
-        self.is_processing = True
+        if self.command_timeout_timer:
+            try:
+                self.command_timeout_timer.cancel()
+            except Exception:
+                pass
+
+        self.state = "thinking"
         self._eval_js("setAuraState('thinking', 'THINKING...')")
+        print(f"[Jarvis] Processing command: '{query}'")
 
-        response = JarvisBrain.answer_query(query)
-        print(f"[Jarvis] Responding: '{response}'")
+        def _think_and_answer():
+            response = JarvisBrain.answer_query(query)
+            print(f"[Jarvis] Responding: '{response}'")
 
-        self._eval_js(f"onAuraResponse({json.dumps(response)})")
-        self._eval_js("setAuraState('speaking', 'SPEAKING...')")
+            self._eval_js(f"onAuraResponse({json.dumps(response)})")
+            self.state = "speaking"
+            self._eval_js("setAuraState('speaking', 'SPEAKING...')")
 
-        def on_done():
-            self.is_processing = False
-            self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
+            def on_done():
+                self.state = "idle"
+                self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
 
-        self.voice.speak(response, on_end=on_done)
+            self.voice.speak(response, on_end=on_done)
+
+        threading.Thread(target=_think_and_answer, daemon=True).start()
 
     def _eval_js(self, js: str):
         if self.window:
@@ -247,49 +319,69 @@ class JarvisApp:
                 pass
 
     def start_wake_word_loop(self):
-        def _loop():
+        def _bg_listener():
+            self.mic_index = get_best_microphone_index()
             rec = sr.Recognizer()
             rec.dynamic_energy_threshold = True
-            rec.pause_threshold = 0.5
+            rec.pause_threshold = 0.6
+            rec.phrase_threshold = 0.3
+            rec.non_speaking_duration = 0.4
 
-            while True:
-                if self.is_listening or self.is_processing:
-                    time.sleep(0.5)
-                    continue
+            try:
+                mic = sr.Microphone(device_index=self.mic_index)
+                with mic as source:
+                    print("[WakeWord] Calibrating microphone for ambient noise...")
+                    rec.adjust_for_ambient_noise(source, duration=1.0)
+                    rec.energy_threshold = max(80, rec.energy_threshold * 0.85)
+                    print(f"[*] Calibration complete: Ambient threshold = {rec.energy_threshold:.1f}")
 
-                try:
-                    with sr.Microphone() as source:
-                        audio = rec.listen(source, timeout=3, phrase_time_limit=4)
+                def callback(recognizer, audio):
+                    # If Jarvis is currently speaking, drop audio buffer
+                    if self.voice.is_speaking or self.state in ["thinking", "speaking"]:
+                        return
 
                     try:
-                        spoken = rec.recognize_google(audio).lower()
-                    except Exception:
-                        continue
+                        spoken = recognizer.recognize_google(audio).lower().strip()
+                    except sr.UnknownValueError:
+                        return
+                    except Exception as ex:
+                        return
 
-                    for w in WAKE_WORDS:
-                        if w in spoken:
-                            print(f"[WakeWord] Activated: '{spoken}'")
-                            trailing = spoken.replace(w, "").strip()
-                            if len(trailing) > 3:
-                                threading.Thread(target=self._process_query, args=(trailing,), daemon=True).start()
-                            else:
-                                threading.Thread(target=self._listen_and_respond, daemon=True).start()
-                            break
+                    if not spoken:
+                        return
 
-                except sr.WaitTimeoutError:
-                    continue
-                except Exception:
-                    time.sleep(1)
+                    print(f"[Heard] '{spoken}'")
 
-        t = threading.Thread(target=_loop, daemon=True)
-        t.start()
+                    # If already awaiting command, this spoken phrase IS the command!
+                    if self.state == "awaiting_command":
+                        self._process_query(spoken)
+                        return
+
+                    # Otherwise, check if wake word was spoken
+                    triggered, query = check_wake_word(spoken)
+                    if triggered:
+                        print(f"[*] Wake word detected in: '{spoken}'")
+                        if query and len(query) >= 3:
+                            # User said wake word and command together (e.g., "Hey Aura what is the battery")
+                            self._process_query(query)
+                        else:
+                            # User said just "Hey Aura" or "Jarvis"
+                            self._enter_awaiting_command()
+
+                self.stop_bg_listen = rec.listen_in_background(mic, callback, phrase_time_limit=5)
+                print("[*] Continuous background listener ACTIVE.")
+                print("[*] Ready: Say 'Hey Aura' or 'Jarvis' anytime...")
+            except Exception as e:
+                print(f"[WakeWord] Microphone error: {e}")
+
+        threading.Thread(target=_bg_listener, daemon=True).start()
 
     def setup_hotkeys(self):
         if not HAS_KEYBOARD:
             return
         try:
-            keyboard.add_hotkey("ctrl+shift+a", self.listen_voice)
-            keyboard.add_hotkey("alt+space", self.listen_voice)
+            keyboard.add_hotkey("ctrl+shift+a", self.trigger_listening)
+            keyboard.add_hotkey("alt+space", self.trigger_listening)
         except Exception:
             pass
 
@@ -305,7 +397,7 @@ class JarvisJSBridge:
 
 def main():
     app = JarvisApp()
-    bridge = JarvisJSBridge(app.listen_voice)
+    bridge = JarvisJSBridge(app.trigger_listening)
 
     html_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud.html")
     with open(html_file, "r", encoding="utf-8") as f:
@@ -331,7 +423,7 @@ def main():
     app.setup_hotkeys()
 
     def greet():
-        time.sleep(1)
+        time.sleep(1.2)
         app.voice.speak("Jarvis online. Systems nominal, sir.")
 
     threading.Thread(target=greet, daemon=True).start()
