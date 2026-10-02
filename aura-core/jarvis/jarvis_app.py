@@ -92,9 +92,29 @@ JARVIS_SYSTEM_PROMPT = (
     "Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
     "Keep answers concise in 1 to 2 spoken sentences. "
     "You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
-    "Never give canned AI safety disclaimers about privacy or account access. If asked to access an app or service, confirm you are executing it for Sir. "
     "Do NOT use markdown, bullet points, asterisks, or robotic formatting."
 )
+
+
+def query_ollama_endpoint(endpoint_path: str, payload: dict, timeout=8):
+    """Resilient Ollama caller: tries configured OLLAMA_BASE_URL (port 8000 or 11434) with local fallback."""
+    base = os.environ.get("OLLAMA_BASE_URL") or getattr(settings, "ollama_base_url", "http://localhost:11434").rstrip('/')
+    candidates = [base]
+    if ":11434" in base:
+        candidates.append(base.replace(":11434", ":8000"))
+    elif ":8000" in base:
+        candidates.append(base.replace(":8000", ":11434"))
+    candidates.append("http://localhost:11434")
+
+    for u in candidates:
+        try:
+            target = f"{u}{endpoint_path}"
+            resp = requests.post(target, json=payload, timeout=timeout)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            continue
+    return None
 
 
 class JarvisVoice:
@@ -455,10 +475,9 @@ class JarvisBrain:
                         f"User Query: {query}\n"
                         f"Provide a direct, concise 1 to 2 spoken sentence answer using the live real-time web telemetry above:\nJARVIS:"
                     )
-                    ollama_url = os.environ.get("OLLAMA_BASE_URL") or getattr(settings, "ollama_base_url", "http://localhost:11434").rstrip('/')
-                    resp = requests.post(
-                        f"{ollama_url}/api/generate",
-                        json={
+                    res_data = query_ollama_endpoint(
+                        "/api/generate",
+                        {
                             "model": "mistral",
                             "prompt": live_prompt,
                             "stream": False,
@@ -471,20 +490,19 @@ class JarvisBrain:
                         },
                         timeout=8
                     )
-                    if resp.status_code == 200:
-                        ans = resp.json().get("response", "").strip()
+                    if res_data:
+                        ans = res_data.get("response", "").strip()
                         if ans:
                             return ans
             except Exception:
                 pass
 
         # 11. Conversational Query via Ollama Local LLM (Optimized for sub-second response)
-        ollama_url = os.environ.get("OLLAMA_BASE_URL") or getattr(settings, "ollama_base_url", "http://localhost:11434").rstrip('/')
         for model in ["llama3.2:1b", "mistral"]:
             try:
-                resp = requests.post(
-                    f"{ollama_url}/api/generate",
-                    json={
+                res_data = query_ollama_endpoint(
+                    "/api/generate",
+                    {
                         "model": model,
                         "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
                         "stream": False,
@@ -498,8 +516,8 @@ class JarvisBrain:
                     },
                     timeout=8
                 )
-                if resp.status_code == 200:
-                    answer = resp.json().get("response", "").strip()
+                if res_data:
+                    answer = res_data.get("response", "").strip()
                     # If llama3.2 gives a canned refusal, seamlessly fall through to mistral
                     if any(ref in answer.lower() for ref in ["can't help with that", "cannot verify", "unable to provide", "i am unable to"]):
                         continue
