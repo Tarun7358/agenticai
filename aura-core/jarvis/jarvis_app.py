@@ -143,30 +143,36 @@ class JarvisBrain:
         if any(k in q for k in ["who are you", "your name", "what are you"]):
             return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX graphics card. At your service, sir."
 
+        if any(k in q for k in ["thank you", "thanks jarvis", "thanks aura", "that is all", "that's all", "go to sleep", "sleep mode", "standby", "goodbye", "bye jarvis"]):
+            return "Always a pleasure, sir. Standing by."
+
         if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
             return "Good day, sir. All systems are operational. How can I assist you?"
 
-        # 2. Instagram Status & Account Linking (Check BEFORE general hardware words)
-        if any(k in q for k in ["instagram", "insta", "ig updates", "ig post", "ig account"]):
+        # 2. Instagram Status, Reels, Posts, and Metrics (Check BEFORE general hardware words)
+        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers"]):
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
             env_vals = dotenv_values(env_path) if os.path.exists(env_path) else {}
             ig_user = env_vals.get("INSTAGRAM_USERNAME") or getattr(settings, "instagram_username", "")
-            if ig_user and ig_user != "your_instagram_username":
-                if any(w in q for w in ["connect", "login", "link", "authenticate", "account"]):
-                    return f"Connecting to your Instagram account @{ig_user}, sir. Account linked and monitoring telemetry is active."
+
+            if any(w in q for w in ["reel", "reels", "views", "recent post", "last post"]):
                 try:
                     from memory.store import get_db
                     conn = get_db()
-                    row = conn.execute("SELECT followers, posts FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
+                    row = conn.execute("SELECT followers, posts, fetched_at FROM instagram_stats ORDER BY id DESC LIMIT 1").fetchone()
                     conn.close()
                     if row:
-                        return f"Your Instagram account @{ig_user} currently has {row[0]} followers with {row[1]} posts, sir."
+                        return f"According to your latest profile telemetry for @{ig_user}, you have {row[0]} followers across {row[1]} posts. Live reel views cannot be scraped directly due to Instagram rate limits, sir."
                 except Exception:
                     pass
+                return f"Sir, live reel views for @{ig_user} cannot be pulled directly right now because Instagram blocks automated scraping with rate limits. I recommend checking your professional dashboard in the Instagram app."
+
+            if ig_user and ig_user != "your_instagram_username":
+                if any(w in q for w in ["connect", "login", "link", "authenticate", "account"]):
+                    return f"Connecting to your Instagram account @{ig_user}, sir. Account linked and monitoring telemetry is active."
                 return f"Instagram telemetry active for @{ig_user}, sir. All background watchers are operational."
             return "Your Instagram monitor is initialized, sir. However, your Instagram username is not configured in settings yet. Once added, I will track your followers and posts."
-
 
         # 3. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
         if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
@@ -265,12 +271,34 @@ class JarvisApp:
                 self.state = "idle"
                 self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
 
-        self.command_timeout_timer = threading.Timer(7.0, _timeout)
+        self.command_timeout_timer = threading.Timer(8.0, _timeout)
         self.command_timeout_timer.daemon = True
         self.command_timeout_timer.start()
 
         # Prompt the user
         self.voice.speak("Yes sir?")
+
+    def _enter_follow_up_listening(self):
+        """Keeps Jarvis listening for subsequent commands without needing the wake word."""
+        self.state = "awaiting_command"
+        self._eval_js("setAuraState('listening', 'LISTENING...')")
+        print("[Jarvis] Continuous conversation active. Listening for follow-up without wake word...")
+
+        if self.command_timeout_timer:
+            try:
+                self.command_timeout_timer.cancel()
+            except Exception:
+                pass
+
+        def _timeout():
+            if self.state == "awaiting_command":
+                print("[Jarvis] Inactive timeout (9s). Returning to standby idle mode.")
+                self.state = "idle"
+                self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
+
+        self.command_timeout_timer = threading.Timer(9.0, _timeout)
+        self.command_timeout_timer.daemon = True
+        self.command_timeout_timer.start()
 
     def _process_query(self, query: str):
         if self.command_timeout_timer:
@@ -291,12 +319,19 @@ class JarvisApp:
             self._eval_js("setAuraState('speaking', 'SPEAKING...')")
 
             def on_done():
-                self.state = "idle"
-                self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
+                q_low = query.lower()
+                if any(w in q_low for w in ["bye", "goodbye", "go to sleep", "sleep", "stop listening", "that's all", "thats all", "thank you", "thanks"]):
+                    self.state = "idle"
+                    self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
+                    print("[Jarvis] Conversation ended by user. Standing by.")
+                else:
+                    # Continuous conversation: automatically listen for follow-up!
+                    self._enter_follow_up_listening()
 
             self.voice.speak(response, on_end=on_done)
 
         threading.Thread(target=_think_and_answer, daemon=True).start()
+
 
     def _eval_js(self, js: str):
         if self.window:
