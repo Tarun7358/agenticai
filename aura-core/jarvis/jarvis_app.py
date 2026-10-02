@@ -479,6 +479,116 @@ class JarvisBrain:
             except Exception as ex:
                 return f"Self-healing encountered an issue: {ex}"
 
+        # 0.5 Windows Workspace & Multi-Window Architect
+        if any(w in q for w in ["arrange workspace", "arrange my workspace", "coding workspace", "split screen"]):
+            try:
+                from agents import window_agent
+                return JarvisBrain._finalize_answer(query, window_agent.arrange_coding_workspace())
+            except Exception as ex:
+                return f"Window arrangement error: {ex}"
+
+        if any(w in q for w in ["minimize all except", "minimize everything except"]):
+            try:
+                from agents import window_agent
+                target = re.sub(r".*?(?:minimize all except|minimize everything except)\s+", "", q).strip()
+                return JarvisBrain._finalize_answer(query, window_agent.minimize_all_except(target))
+            except Exception as ex:
+                return f"Window minimization error: {ex}"
+
+        m_snap = re.search(r"\bsnap\s+([a-zA-Z0-9_\- ]+?)\s+(left|right)\b", q)
+        if m_snap:
+            try:
+                from agents import window_agent
+                app_name, side = m_snap.groups()
+                return JarvisBrain._finalize_answer(query, window_agent.snap_window(app_name.strip(), side.strip()))
+            except Exception as ex:
+                return f"Window snap error: {ex}"
+
+        # 0.6 Active Voice Dictation & Ghostwriter
+        if re.search(r"^(?:type this for me|type for me|type this)\s*(.+)$", q, flags=re.IGNORECASE):
+            try:
+                from agents import dictation_agent
+                text_to_type = re.sub(r"^(?:type this for me|type for me|type this)\s*[:,\s]*", "", query, flags=re.IGNORECASE).strip()
+                return JarvisBrain._finalize_answer(query, dictation_agent.type_into_focused_window(text_to_type))
+            except Exception as ex:
+                return f"Dictation error: {ex}"
+
+        if re.search(r"^(?:ghostwrite|write a reply|write an email|write a message)\s*(.+)$", q, flags=re.IGNORECASE):
+            try:
+                from agents import dictation_agent
+                return JarvisBrain._finalize_answer(query, dictation_agent.ghostwrite_and_type(query))
+            except Exception as ex:
+                return f"Ghostwriting error: {ex}"
+
+        # 0.7 Webcam Presence & Walk-Away Auto-Lock Sentinel
+        if any(w in q for w in ["enable presence lock", "activate presence sentinel", "turn on presence lock", "enable presence sentinel"]):
+            try:
+                from agents import presence_agent
+                return JarvisBrain._finalize_answer(query, presence_agent.enable_presence_lock())
+            except Exception as ex:
+                return f"Presence activation error: {ex}"
+
+        if any(w in q for w in ["disable presence lock", "deactivate presence sentinel", "turn off presence lock", "disable presence sentinel"]):
+            try:
+                from agents import presence_agent
+                return JarvisBrain._finalize_answer(query, presence_agent.disable_presence_lock())
+            except Exception as ex:
+                return f"Presence deactivation error: {ex}"
+
+        if any(w in q for w in ["presence status", "presence sentinel status", "check presence"]):
+            try:
+                from agents import presence_agent
+                return JarvisBrain._finalize_answer(query, presence_agent.get_presence_status())
+            except Exception as ex:
+                return f"Presence query error: {ex}"
+
+        # 0.8 Network Intrusion & ARP Spoofing Sentinel
+        if any(w in q for w in ["audit network security", "scan for intrusion", "network security status", "arp spoofing", "is my wifi secure", "network intrusion"]):
+            try:
+                from agents import security_sentinel
+                return JarvisBrain._finalize_answer(query, security_sentinel.get_security_summary())
+            except Exception as ex:
+                return f"Security audit error: {ex}"
+
+        # 0.9 Live Meeting & Audio Notetaker
+        if any(w in q for w in ["start meeting notes", "take meeting notes", "start taking notes", "record meeting"]):
+            try:
+                from agents import transcriber_agent
+                return JarvisBrain._finalize_answer(query, transcriber_agent.start_notes())
+            except Exception as ex:
+                return f"Notetaker error: {ex}"
+
+        if any(w in q for w in ["stop meeting notes", "stop taking notes", "finish meeting", "end meeting notes"]):
+            try:
+                from agents import transcriber_agent
+                return JarvisBrain._finalize_answer(query, transcriber_agent.stop_notes())
+            except Exception as ex:
+                return f"Notetaker error: {ex}"
+
+        # 0.10 Autonomous Browser & Web Operator
+        if any(w in q for w in ["trending on github", "trending repositories", "github trending"]):
+            try:
+                from agents import browser_operator
+                return JarvisBrain._finalize_answer(query, browser_operator.get_trending_github())
+            except Exception as ex:
+                return f"Browser operator error: {ex}"
+
+        if any(w in q for w in ["tech headlines", "technology news", "hacker news", "tech news"]):
+            try:
+                from agents import browser_operator
+                return JarvisBrain._finalize_answer(query, browser_operator.get_tech_headlines())
+            except Exception as ex:
+                return f"Browser operator error: {ex}"
+
+        m_browse = re.search(r"\b(?:browse and summarize|summarize webpage|summarize page)\s+(https?://\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}\S*)", q)
+        if m_browse:
+            try:
+                from agents import browser_operator
+                target_url = m_browse.group(1).strip()
+                return JarvisBrain._finalize_answer(query, browser_operator.browse_and_summarize(target_url))
+            except Exception as ex:
+                return f"Web browsing error: {ex}"
+
         # 1. Instant Fast-Path Common Commands (<5ms latency)
         if any(k in q for k in ["what can you do", "your capabilities", "what do you do", "features"]):
             return "I have full local control over your laptop, sir. I can manage WhatsApp, launch YouTube Studio, monitor GitHub repositories, track Wi-Fi devices, inspect specs, and post Instagram reels."

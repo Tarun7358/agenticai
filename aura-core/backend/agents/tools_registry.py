@@ -152,6 +152,46 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> str:
             from agents import research_agent
             res = research_agent.search_live_web(args.get("query", ""))
             return res.get("snippets", "No web results found.")
+        elif t in ["arrange_workspace", "arrange_coding_workspace"]:
+            from agents import window_agent
+            return window_agent.arrange_coding_workspace()
+        elif t == "snap_window":
+            from agents import window_agent
+            return window_agent.snap_window(args.get("keyword", ""), args.get("side", "left"), args.get("ratio", 0.5))
+        elif t in ["minimize_windows", "minimize_all_except"]:
+            from agents import window_agent
+            return window_agent.minimize_all_except(args.get("keyword", ""))
+        elif t in ["type_text", "dictate_text"]:
+            from agents import dictation_agent
+            return dictation_agent.type_into_focused_window(args.get("text", ""))
+        elif t in ["ghostwrite", "ghostwrite_and_type"]:
+            from agents import dictation_agent
+            return dictation_agent.ghostwrite_and_type(args.get("prompt", ""))
+        elif t in ["toggle_presence_lock", "presence_lock"]:
+            from agents import presence_agent
+            enable = args.get("enable", True) if "enable" in args else True
+            return presence_agent.toggle_presence_lock(enable)
+        elif t in ["presence_status", "check_presence"]:
+            from agents import presence_agent
+            return presence_agent.get_presence_status()
+        elif t in ["audit_network_security", "check_network_security", "network_audit"]:
+            from agents import security_sentinel
+            return security_sentinel.audit_network_security()
+        elif t in ["start_meeting_notes", "record_meeting"]:
+            from agents import transcriber_agent
+            return transcriber_agent.start_meeting_notes(args.get("title", ""))
+        elif t in ["stop_meeting_notes", "finalize_meeting"]:
+            from agents import transcriber_agent
+            return transcriber_agent.stop_meeting_notes()
+        elif t in ["get_trending_github", "trending_github"]:
+            from agents import browser_operator
+            return browser_operator.get_trending_github(limit=int(args.get("limit", 3)), language=args.get("language", ""))
+        elif t in ["get_tech_headlines", "tech_headlines"]:
+            from agents import browser_operator
+            return browser_operator.get_tech_headlines(int(args.get("limit", 5)))
+        elif t in ["browse_web", "browse_and_summarize"]:
+            from agents import browser_operator
+            return browser_operator.browse_and_summarize(args.get("url", ""))
     except Exception as e:
         return f"Error executing tool {tool_name}: {e}"
 
