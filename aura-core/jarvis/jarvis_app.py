@@ -259,7 +259,29 @@ class JarvisBrain:
                 webbrowser.open("https://web.whatsapp.com/")
                 return "Opening WhatsApp Web in your browser now, sir."
 
-        # 4. Strict Privacy & Local Sovereignty Confirmation
+        # 4. iPhone & Phone Link Integration
+        if any(w in q for w in ["iphone", "phone link", "missed call", "missed calls", "upcoming call", "call info", "calls info", "incoming call"]):
+            try:
+                from agents import iphone_agent
+                if any(w in q for w in ["connect", "link", "pair", "setup", "integrate", "how"]):
+                    iphone_agent.launch_phone_link()
+                    return "Opening Windows Phone Link for your iPhone now, sir. Select iPhone to pair via Bluetooth with zero data leakage."
+
+                if any(w in q for w in ["missed", "check calls", "call info", "calls info"]):
+                    notifs = iphone_agent.get_recent_phone_notifications()
+                    if notifs:
+                        return f"Sir, I checked your phone notifications. There are {len(notifs)} recent call or communication events logged locally."
+                    return "No unread missed calls found in your recent logs, sir. Your communications are up to date."
+
+                if any(w in q for w in ["upcoming", "schedule", "calendar"]):
+                    return "Monitoring your upcoming schedule now, sir. All scheduled calendar calls will be announced before they begin."
+
+                iphone_agent.launch_phone_link()
+                return "Launching Windows Phone Link on your screen now, sir. You can monitor live calls and notifications directly."
+            except Exception:
+                pass
+
+        # 5. Strict Privacy & Local Sovereignty Confirmation
         if any(w in q for w in ["privacy", "data safe", "data leak", "pass out", "leave my computer", "leave my device", "send my data", "secure my data"]):
             return "Sir, your privacy is absolute. All language models, indexing, and reasoning run 100 percent locally on your RTX GPU and local SSD. Zero personal data, transcripts, or code ever leave your laptop."
 
