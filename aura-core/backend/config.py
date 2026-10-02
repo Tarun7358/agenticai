@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Instagram
     instagram_username: str = ""
     instagram_password: str = ""
+    instagram_session_id: str = ""
 
     # Email
     email_imap_host: str = "imap.gmail.com"

@@ -31,12 +31,13 @@ os.makedirs(REELS_DIR, exist_ok=True)
 _client = None
 
 
-def get_credentials() -> tuple[str, str]:
+def get_credentials() -> tuple[str, str, str]:
     env_path = os.path.join(BACKEND_DIR, ".env")
     env = dotenv_values(env_path) if os.path.exists(env_path) else {}
     username = env.get("INSTAGRAM_USERNAME", "").strip()
     password = env.get("INSTAGRAM_PASSWORD", "").strip()
-    return username, password
+    session_id = env.get("INSTAGRAM_SESSION_ID", "").strip()
+    return username, password, session_id
 
 
 def get_client(force_login: bool = False):
@@ -47,26 +48,40 @@ def get_client(force_login: bool = False):
 
     from instagrapi import Client
 
-    username, password = get_credentials()
-    if not username:
-        raise ValueError("Instagram username not configured in .env")
+    username, password, session_id = get_credentials()
+    if not username and not session_id:
+        raise ValueError("Instagram username or session ID not configured in .env")
 
     cl = Client()
     cl.delay_range = [1, 3]
 
-    # Attempt to load persistent session
+    # 1. Attempt to authenticate using Session ID cookie directly (Safest, 0 2FA hurdle)
+    if session_id and not force_login:
+        try:
+            print("[InstagramEngine] Authenticating via INSTAGRAM_SESSION_ID cookie...")
+            cl.login_by_sessionid(session_id)
+            cl.dump_settings(SESSION_FILE)
+            print("[InstagramEngine] Session ID authentication successful! Dumped to session.json.")
+            _client = cl
+            return _client
+        except Exception as ex:
+            print(f"[InstagramEngine] Session ID login warning ({ex}), trying cached file / password...")
+
+    # 2. Attempt to load persistent session from disk
     if os.path.exists(SESSION_FILE) and not force_login:
         try:
             print("[InstagramEngine] Loading saved session from disk...")
             cl.load_settings(SESSION_FILE)
-            cl.login(username, password)
+            if username and password:
+                cl.login(username, password)
             _client = cl
             return _client
         except Exception as e:
             print(f"[InstagramEngine] Saved session expired or invalid ({e}), performing clean login...")
 
+    # 3. Standard password login fallback
     if not password:
-        raise ValueError("Instagram password not set in .env")
+        raise ValueError("Instagram password or INSTAGRAM_SESSION_ID must be set in .env")
 
     print(f"[InstagramEngine] Authenticating with Instagram as @{username}...")
     try:
@@ -143,7 +158,7 @@ def find_latest_video_file() -> Optional[str]:
 
 def get_live_reel_analytics(username: str = None) -> Dict[str, Any]:
     """Fetches real-time reel view counts, plays, likes, and comments."""
-    cfg_user, _ = get_credentials()
+    cfg_user, _, _ = get_credentials()
     username = username or cfg_user
 
     try:
