@@ -74,59 +74,29 @@ def get_best_microphone_index():
         n_low = name.lower()
         return any(term in n_low for term in ["logi", "c270", "webcam", "camera"])
 
-    # 1. Look for explicit Headphone / Headset / Realtek devices (excluding webcams)
-    headphone_candidates = []
-    for idx, name in enumerate(names):
-        n_low = name.lower()
-        if is_webcam(name):
-            continue
-        if any(term in n_low for term in ["headphone", "headset", "earphone", "realtek"]):
-            if "mic" in n_low or "input" in n_low:
-                headphone_candidates.append(idx)
-
-    # Test headphone candidates and pick the one with highest active signal
-    best_idx = None
-    best_lvl = -1
-    for idx in headphone_candidates:
-        try:
-            mic = sr.Microphone(device_index=idx)
-            with mic as source:
-                levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(4)]
-                avg_lvl = sum(levels) / len(levels)
-                print(f"[*] Headphone candidate [{idx}] '{names[idx]}': RMS = {avg_lvl:.1f}")
-                if avg_lvl > best_lvl:
-                    best_lvl = avg_lvl
-                    best_idx = idx
-        except Exception:
-            pass
-
-    if best_idx is not None:
-        print(f"[*] --> CONNECTED to Headphone input [{best_idx}]: {names[best_idx]} (RMS: {best_lvl:.1f})")
-        print("[*] Logitech Webcam mic excluded per configuration.")
-        return best_idx
-
-    # 2. General fallback excluding webcams
+    # 1. Primary choice: Standard Headphone / Realtek MME Device (Index 1)
     for idx in range(len(names)):
+        n_low = names[idx].lower()
         if is_webcam(names[idx]):
             continue
-        if "input" in names[idx].lower() or "mic" in names[idx].lower():
-            try:
-                mic = sr.Microphone(device_index=idx)
-                with mic as source:
-                    levels = [audioop.rms(source.stream.read(source.CHUNK), source.SAMPLE_WIDTH) for _ in range(3)]
-                    avg_lvl = sum(levels) / len(levels)
-                    if avg_lvl > best_lvl:
-                        best_lvl = avg_lvl
-                        best_idx = idx
-            except Exception:
-                pass
+        if "realtek" in n_low and "mic" in n_low and idx < 6:
+            print(f"[*] --> CONNECTED to Headphone input [{idx}]: {names[idx]}")
+            print("[*] Logitech Webcam mic excluded per configuration.")
+            return idx
 
-    if best_idx is not None:
-        print(f"[*] --> CONNECTED to input [{best_idx}]: {names[best_idx]}")
-        return best_idx
+    # 2. Any explicit USB or Bluetooth headphone/headset device
+    for idx in range(len(names)):
+        n_low = names[idx].lower()
+        if is_webcam(names[idx]):
+            continue
+        if any(term in n_low for term in ["headphone", "headset", "earphone"]):
+            print(f"[*] --> CONNECTED to Headphone input [{idx}]: {names[idx]}")
+            return idx
 
-    print("[*] Defaulting to system primary microphone.")
-    return None
+    # 3. Default fallback to system primary input (excluding webcam)
+    print("[*] Defaulting to system primary input [0]: Microsoft Sound Mapper")
+    return 0
+
 
 
 JARVIS_SYSTEM_PROMPT = (
@@ -285,6 +255,7 @@ class JarvisApp:
     def _enter_awaiting_command(self):
         self.state = "awaiting_command"
         self._eval_js("setAuraState('listening', 'LISTENING...')")
+        self._eval_js("onAuraResponse('Yes sir? Listening...')")
 
         # Cancel any pending timeout
         if self.command_timeout_timer:
@@ -314,7 +285,9 @@ class JarvisApp:
                 pass
 
         self.state = "thinking"
-        self._eval_js("setAuraState('thinking', 'THINKING...')")
+        display_q = (query[:20] + "..") if len(query) > 20 else query
+        self._eval_js(f"setAuraState('thinking', 'HEARD: {display_q.upper()}')")
+        self._eval_js(f"onAuraResponse({json.dumps('Heard: ' + query)})")
         print(f"[Jarvis] Processing command: '{query}'")
 
         def _think_and_answer():
