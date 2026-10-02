@@ -165,7 +165,8 @@ class JarvisBrain:
         if any(k in q for k in ["who are you", "your name", "what are you"]):
             return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX graphics card. At your service, sir."
 
-        if any(k in q for k in ["thank you", "thanks jarvis", "thanks aura", "that is all", "that's all", "go to sleep", "sleep mode", "standby", "goodbye", "bye jarvis"]):
+        # Standby, dismissals, and polite acknowledgments (<5ms)
+        if any(w in q for w in ["thank", "thanks", "that is all", "that's all", "nothing", "never mind", "nevermind", "leave it", "cancel", "standby", "go to sleep", "sleep mode", "goodbye", "bye", "ok ok", "okay okay", "nothing nothing"]):
             return "Always a pleasure, sir. Standing by."
 
         if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening", "ok", "okay", "alright", "cool"]):
@@ -402,19 +403,39 @@ class JarvisBrain:
             except Exception:
                 pass
 
-        # 10. Explicit Web Research
-        search_match = re.search(r"\b(?:search online for|search web for|search the internet for|look up online)\s+(.+)$", q)
-        if search_match:
-            topic = search_match.group(1).strip(" ?.")
+        # 10. Real-Time Live Network Search & Web Intelligence
+        is_live_query = any(w in q for w in ["current", "latest", "recent", "who is", "who won", "today", "now", "weather", "score", "price", "minister", "president", "ceo", "news", "election", "update", "search online", "search web", "look up"])
+        if is_live_query:
             try:
                 from agents import research_agent
-                res = research_agent.query_public_knowledge(topic)
-                if res.get("status") == "ok":
-                    summary = res.get("summary", "")
-                    first_two = ". ".join(summary.split(". ")[:2]).strip()
-                    if not first_two.endswith("."):
-                        first_two += "."
-                    return f"According to verified public records, sir: {first_two}"
+                search_term = re.sub(r"\b(search online for|search web for|search the internet for|look up|jarvis|aura)\b", "", q).strip(" ?.")
+                res = research_agent.search_live_web(search_term or q, max_results=3)
+                if res.get("status") == "ok" and res.get("snippets"):
+                    live_prompt = (
+                        f"{JARVIS_SYSTEM_PROMPT}\n\n"
+                        f"[Real-Time Live Web Telemetry]:\n{res['snippets']}\n\n"
+                        f"User Query: {query}\n"
+                        f"Provide a direct, concise 1 to 2 spoken sentence answer using the live real-time web telemetry above:\nJARVIS:"
+                    )
+                    resp = requests.post(
+                        "http://localhost:11434/api/generate",
+                        json={
+                            "model": "mistral",
+                            "prompt": live_prompt,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.3,
+                                "num_predict": 50,
+                                "num_ctx": 512
+                            },
+                            "keep_alive": "60m"
+                        },
+                        timeout=8
+                    )
+                    if resp.status_code == 200:
+                        ans = resp.json().get("response", "").strip()
+                        if ans:
+                            return ans
             except Exception:
                 pass
 
@@ -534,10 +555,11 @@ class JarvisApp:
 
             def on_done():
                 q_low = query.lower()
-                if any(w in q_low for w in ["bye", "goodbye", "go to sleep", "sleep", "stop listening", "that's all", "thats all", "thank you", "thanks"]):
+                r_low = response.lower()
+                if "standing by" in r_low or any(w in q_low for w in ["bye", "goodbye", "go to sleep", "sleep", "stop", "that's all", "thats all", "thank", "thanks", "nothing", "never mind", "nevermind", "leave it", "cancel", "ok ok", "okay okay"]):
                     self.state = "idle"
                     self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
-                    print("[Jarvis] Conversation ended by user. Standing by.")
+                    print("[Jarvis] Conversation ended by user. Standing by in idle mode.")
                 else:
                     # Continuous conversation: automatically listen for follow-up!
                     self._enter_follow_up_listening()

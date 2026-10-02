@@ -1,43 +1,57 @@
 """
-Autonomous Research, Problem Solving & Knowledge Synthesis Agent for AURA.
-Safely queries external knowledge (Wikipedia, Public Tech Docs) using anonymized read-only requests.
-Strict Zero-Leakage: Never transmits user files, personal code, or credentials outside.
+Autonomous Live Research & Real-Time Web Intelligence Agent for AURA.
+Safely fetches live internet search snippets across the network in real time.
+Zero-Leakage Architecture:
+- Outbound: Sends only anonymous search query strings (no user files, code, or identity).
+- Inbound: Extracts public search snippets into local RAM for local GPU synthesis.
 """
-import urllib.parse
 from typing import Dict, Any, List
 
-def query_public_knowledge(topic: str) -> Dict[str, Any]:
+def search_live_web(query: str, max_results: int = 3) -> Dict[str, Any]:
     """
-    Fetches objective encyclopedic knowledge and definitions using an anonymized read-only agent.
+    Performs real-time anonymous live web search across the network.
+    Returns live snippets reflecting the latest current-year facts.
     """
+    snippets = []
+    # 1. Primary: DDGS live real-time search
+    try:
+        from ddgs import DDGS
+        results = list(DDGS().text(query, max_results=max_results))
+        for r in results:
+            title = r.get("title", "")
+            body = r.get("body", "")
+            if body:
+                snippets.append(f"{title}: {body}")
+        if snippets:
+            return {
+                "status": "ok",
+                "source": "Live Real-Time Web",
+                "snippets": "\n".join(snippets),
+                "count": len(snippets)
+            }
+    except Exception:
+        pass
+
+    # 2. Secondary fallback: Wikipedia
     try:
         import wikipedia
         wikipedia.set_user_agent("AuraResearchAgent/1.0 (local; privacy-preserving)")
-        summary = wikipedia.summary(topic, sentences=3, auto_suggest=True)
-        return {
-            "status": "ok",
-            "source": "Wikipedia Public Knowledge",
-            "topic": topic,
-            "summary": summary
-        }
-    except Exception as ex:
-        # Fallback to ddg3 if installed
-        try:
-            import ddg3
-            r = ddg3.query(topic)
-            if r.abstract and r.abstract.text:
-                return {
-                    "status": "ok",
-                    "source": "DuckDuckGo Instant Knowledge",
-                    "topic": topic,
-                    "summary": r.abstract.text
-                }
-        except Exception:
-            pass
-        return {
-            "status": "not_found",
-            "message": f"No public summary found for '{topic}'. Utilizing local GPU reasoning."
-        }
+        summary = wikipedia.summary(query, sentences=3, auto_suggest=True)
+        if summary:
+            return {
+                "status": "ok",
+                "source": "Wikipedia Public Knowledge",
+                "snippets": summary,
+                "count": 1
+            }
+    except Exception:
+        pass
+
+    return {
+        "status": "not_found",
+        "snippets": "",
+        "message": "No live snippets retrieved."
+    }
 
 def get_project_idea_framework() -> List[str]:
     """Provides high-level creative project architectures for AI/Web systems."""
