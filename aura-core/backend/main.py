@@ -5,6 +5,7 @@ All REST + WebSocket endpoints for the React frontend.
 
 import asyncio
 import datetime
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -18,6 +19,7 @@ from config import settings
 from memory.store import init_db, get_history, get_recent_events
 from utils.llm import chat, check_ollama_status, summarize
 from agents import network_agent, instagram_agent, file_agent, iphone_agent
+from agents import phone_link_monitor
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -27,6 +29,7 @@ async def lifespan(app: FastAPI):
     print("[AURA] Starting up...")
     init_db()
     file_agent.start_file_watcher()
+    phone_link_monitor.start_monitor_background()  # Watch Phone Link for calls
     # Initial network scan in background
     asyncio.create_task(asyncio.to_thread(network_agent.scan_and_update_db))
     print("[AURA] Online at http://127.0.0.1:8000")
@@ -283,3 +286,68 @@ async def pair_iphone():
     """Triggers Windows Phone Link for Bluetooth P2P pairing."""
     msg = iphone_agent.launch_phone_link()
     return {"status": "ok", "message": msg}
+
+
+# ─── Phone Link Call Events ───────────────────────────────────────────────────
+
+class CallEventRequest(BaseModel):
+    caller: str
+    type: str          # "incoming", "missed", "scheduled"
+    time: str
+    source: str = "phone_link"
+
+# In-memory store for latest call events (also feeds Jarvis announcements)
+_call_events = []
+
+@app.post("/phone/call-event")
+async def receive_call_event(req: CallEventRequest):
+    """
+    Receives call events pushed by phone_link_monitor on Laptop 2.
+    Stores event and returns so Jarvis can announce it.
+    """
+    event = req.dict()
+    _call_events.append(event)
+    # Keep only last 20
+    if len(_call_events) > 20:
+        _call_events.pop(0)
+    # Also record in iphone_agent memory
+    iphone_agent.record_call_event(req.caller, req.type, req.time)
+    print(f"[PHONE] 📞 {req.type.upper()} call from {req.caller} at {req.time}")
+    return {"status": "ok", "event": event}
+
+@app.get("/phone/calls")
+async def get_all_calls():
+    """Returns recent call events received from Phone Link monitor."""
+    return {
+        "recent": _call_events[-10:],
+        "missed": [c for c in _call_events if c.get("type") == "missed"],
+        "count": len(_call_events)
+    }
+
+
+# ─── File Sync Endpoint (System 1 → Laptop 2) ────────────────────────────────
+
+class FileSyncRequest(BaseModel):
+    path: str       # relative path e.g. "backend/main.py"
+    content: str    # full file content
+
+BASE_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+@app.post("/sync/file")
+async def sync_file(req: FileSyncRequest):
+    """
+    Receives a file from System 1 and writes it to the correct location.
+    Used for updating Laptop 2 files without SSH keys.
+    """
+    import os as _os
+    target = _os.path.join(BASE_PROJECT, req.path.replace("/", _os.sep))
+    _os.makedirs(_os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(req.content)
+    print(f"[SYNC] ✅ Updated: {target}")
+    return {"status": "ok", "path": target}
+
+@app.get("/sync/ping")
+async def sync_ping():
+    """Health check for sync system."""
+    return {"status": "ok", "message": "Laptop 2 backend online"}

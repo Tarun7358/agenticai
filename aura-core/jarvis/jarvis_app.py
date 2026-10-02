@@ -761,6 +761,56 @@ def main():
     except Exception as ex:
         print(f"[LAN Sync] Listener start error: {ex}")
 
+    # ─── Phone Call Watcher ───────────────────────────────
+    def _phone_call_watcher():
+        """
+        Polls AURA backend every 5s for new call events (incoming/missed).
+        Announces them via Jarvis TTS — "Sir, missed call from Rahul."
+        Works with iPhone via Phone Link on Laptop 2.
+        """
+        BACKEND = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+        # Also try local backend if remote
+        candidates = [BACKEND, "http://127.0.0.1:8000"]
+        seen_callers = set()
+        print("[PHONE WATCHER] 🟢 Monitoring for calls...")
+
+        while True:
+            try:
+                for base in candidates:
+                    try:
+                        r = requests.get(f"{base}/phone/calls", timeout=3)
+                        if r.status_code == 200:
+                            data = r.json()
+                            recent = data.get("recent", [])
+                            for event in recent:
+                                caller = event.get("caller", "Unknown")
+                                ctype  = event.get("type", "")
+                                etime  = event.get("time", "")
+                                key    = f"{caller}_{etime}"
+
+                                if key not in seen_callers:
+                                    seen_callers.add(key)
+                                    # Announce via Jarvis voice
+                                    if ctype == "missed":
+                                        msg = f"Sir, you have a missed call from {caller}."
+                                    elif ctype == "incoming":
+                                        msg = f"Sir, {caller} is calling."
+                                    elif ctype == "scheduled":
+                                        msg = f"Reminder sir, you have a scheduled call with {caller}."
+                                    else:
+                                        msg = f"Sir, phone event from {caller}."
+                                    print(f"[PHONE WATCHER] 📞 {msg}")
+                                    app.voice.speak(msg)
+                            break  # got a response, stop trying candidates
+                    except Exception:
+                        continue
+            except Exception as e:
+                pass
+            time.sleep(5)
+
+    threading.Thread(target=_phone_call_watcher, daemon=True).start()
+    print("[PHONE WATCHER] Call announcement thread started.")
+
     def greet():
         time.sleep(1.2)
         app.voice.speak("Jarvis online. Systems nominal, sir.")

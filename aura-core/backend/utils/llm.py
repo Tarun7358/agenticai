@@ -25,15 +25,29 @@ Current time: {current_time}
 
 
 async def check_ollama_status() -> dict:
-    """Check if Ollama is running and which models are available."""
+    """Check if Ollama or Remote AI node is running and which models are available."""
+    # 1. Try standard Ollama endpoint /api/tags
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=4) as client:
             resp = await client.get(f"{OLLAMA_URL}/api/tags")
             if resp.status_code == 200:
                 models = [m["name"] for m in resp.json().get("models", [])]
                 return {"status": "online", "models": models}
-    except Exception as e:
+    except Exception:
         pass
+
+    # 2. Try remote AURA node endpoint /api/status (Laptop 2 on port 8000)
+    try:
+        async with httpx.AsyncClient(timeout=4) as client:
+            resp = await client.get(f"{OLLAMA_URL}/api/status")
+            if resp.status_code == 200:
+                data = resp.json()
+                ollama_data = data.get("ollama", {})
+                if ollama_data.get("status") == "online":
+                    return {"status": "online", "models": ollama_data.get("models", [])}
+    except Exception:
+        pass
+
     return {"status": "offline", "models": [], "hint": "Run: ollama serve"}
 
 
@@ -43,7 +57,7 @@ async def chat(
     context: str = ""
 ) -> AsyncGenerator[str, None]:
     """
-    Stream a response from Ollama.
+    Stream a response from Ollama (local or remote node).
     Maintains conversation history automatically.
     """
     # Build history
@@ -66,10 +80,34 @@ async def chat(
     # Save user message
     save_message(session_id, "user", user_message)
 
-    # Stream from Ollama
+    # Stream from Ollama or Remote AURA Gateway
     full_response = ""
     try:
         async with httpx.AsyncClient(timeout=120) as client:
+            # If OLLAMA_URL points to remote AURA node on port 8000, stream from its /api/chat/stream
+            if ":8000" in OLLAMA_URL:
+                try:
+                    async with client.stream(
+                        "POST",
+                        f"{OLLAMA_URL}/api/chat/stream",
+                        json={"message": user_message, "session_id": session_id}
+                    ) as resp:
+                        if resp.status_code == 200:
+                            async for line in resp.aiter_lines():
+                                if not line or not line.startswith("data: "):
+                                    continue
+                                chunk = line[6:]
+                                if chunk == "[DONE]":
+                                    break
+                                full_response += chunk
+                                yield chunk
+                            if full_response:
+                                save_message(session_id, "assistant", full_response)
+                                return
+                except Exception:
+                    pass
+
+            # Standard Ollama /api/chat stream
             async with client.stream(
                 "POST",
                 f"{OLLAMA_URL}/api/chat",
@@ -98,7 +136,7 @@ async def chat(
                     except json.JSONDecodeError:
                         continue
     except httpx.ConnectError:
-        error_msg = "⚠️ AURA's AI brain (Ollama) is offline. Please run `ollama serve` in a terminal, then try again."
+        error_msg = "⚠️ AURA's AI brain (Ollama on Laptop 2) is unreachable. Please verify connection and try again."
         yield error_msg
         full_response = error_msg
 

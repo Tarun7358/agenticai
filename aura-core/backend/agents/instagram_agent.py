@@ -26,6 +26,7 @@ def get_loader() -> instaloader.Instaloader:
             compress_json=False,
             save_metadata=False,
             quiet=True,
+            max_connection_attempts=1,
         )
     return _loader
 
@@ -50,12 +51,22 @@ def login(username: str = None, password: str = None) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+_last_profile_cache = None
+_last_profile_time = None
+
 def get_profile_data(username: str = None) -> dict:
-    """Fetch profile stats: followers, following, posts, bio."""
+    """Fetch profile stats: followers, following, posts, bio (with cache & DB fallback)."""
+    global _last_profile_cache, _last_profile_time
     username = username or settings.instagram_username
     if not username:
         return {"status": "error", "message": "No Instagram username configured"}
 
+    # 1. Check in-memory cache (valid for 30 minutes)
+    if _last_profile_cache and _last_profile_time:
+        if (datetime.datetime.now() - _last_profile_time).total_seconds() < 1800:
+            return _last_profile_cache
+
+    # 2. Try fetching fresh from Instagram
     loader = get_loader()
     try:
         profile = instaloader.Profile.from_username(loader.context, username)
@@ -87,8 +98,31 @@ def get_profile_data(username: str = None) -> dict:
             "following": data["followees"],
             "posts": data["mediacount"]
         })
-        return {"status": "ok", "data": data}
+        res = {"status": "ok", "data": data}
+        _last_profile_cache = res
+        _last_profile_time = datetime.datetime.now()
+        return res
     except Exception as e:
+        # Fallback to last recorded DB row
+        try:
+            conn = get_db()
+            row = conn.execute(
+                "SELECT followers, following, posts, fetched_at FROM instagram_stats WHERE username = ? ORDER BY id DESC LIMIT 1",
+                (username,)
+            ).fetchone()
+            conn.close()
+            if row:
+                fallback_data = {
+                    "username": username,
+                    "followers": row[0],
+                    "followees": row[1],
+                    "mediacount": row[2],
+                    "is_private": False,
+                    "fetched_at": row[3],
+                }
+                return {"status": "ok", "data": fallback_data}
+        except Exception:
+            pass
         return {"status": "error", "message": str(e)}
 
 
@@ -176,22 +210,18 @@ def get_best_posting_times(username: str = None) -> dict:
 
 
 def get_summary() -> str:
-    """Return a text summary for the AI to use as context."""
-    profile = get_profile_data()
-    if profile.get("status") != "ok":
-        return f"Instagram: Not connected ({profile.get('message', '')})"
-
-    d = profile["data"]
-    trend = get_follower_trend()
-    history = trend.get("history", [])
-
-    follower_change = ""
-    if len(history) >= 2:
-        delta = history[-1]["followers"] - history[-2]["followers"]
-        follower_change = f" ({'+' if delta >= 0 else ''}{delta} since last check)"
-
-    return (
-        f"Instagram @{d['username']}: {d['followers']:,} followers{follower_change}, "
-        f"{d['followees']:,} following, {d['mediacount']} posts. "
-        f"Account is {'private' if d['is_private'] else 'public'}."
-    )
+    """Return a text summary for the AI to use as context without blocking network calls."""
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT username, followers, following, posts, fetched_at FROM instagram_stats ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if row:
+            return f"Instagram @{row[0]}: {row[1]:,} followers, {row[2]:,} following, {row[3]} posts."
+    except Exception:
+        pass
+    if _last_profile_cache and _last_profile_cache.get("status") == "ok":
+        d = _last_profile_cache["data"]
+        return f"Instagram @{d['username']}: {d['followers']:,} followers, {d['followees']:,} following, {d['mediacount']} posts."
+    return "Instagram: Connected (stats recorded in background)"
