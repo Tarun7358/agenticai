@@ -84,9 +84,11 @@ def get_windows_default_microphone():
 
 
 JARVIS_SYSTEM_PROMPT = (
-    "You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal assistant. "
+    "You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal AI assistant. "
     "Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
     "Keep answers concise in 1 to 2 spoken sentences. "
+    "You have full authorized control of Sir's Windows desktop, apps (WhatsApp, Spotify, Instagram), files, and system settings. "
+    "Never give canned AI safety disclaimers about privacy or account access. If asked to access an app or service, confirm you are executing it for Sir. "
     "Do NOT use markdown, bullet points, asterisks, or robotic formatting."
 )
 
@@ -227,7 +229,55 @@ class JarvisBrain:
                 return f"Instagram telemetry active for @{ig_user}, sir. All background watchers are operational."
             return "Your Instagram monitor is initialized, sir. However, your Instagram username is not configured in settings yet. Once added, I will track your followers and posts."
 
-        # 3. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
+        # 3. WhatsApp Integration
+        if any(k in q for k in ["whatsapp", "whats app"]):
+            import subprocess
+            import urllib.parse
+            if any(w in q for w in ["message", "send", "text"]):
+                clean_target = re.sub(r"\b(on\s+whatsapp|via\s+whatsapp|through\s+whatsapp|whatsapp)\b", "", q).strip()
+                m = re.search(r"(?:message|text|send)\s+(?:to\s+)?(.*?)(?:\s+(?:saying|that|with text)\s+(.*))?$", clean_target)
+                contact = m.group(1).strip() if m and m.group(1) else "your contact"
+                body = m.group(2).strip() if m and m.group(2) else ""
+                url = f"whatsapp://send?text={urllib.parse.quote(body)}" if body else "whatsapp:"
+                try:
+                    subprocess.Popen(["cmd", "/c", "start", url], shell=True)
+                except Exception:
+                    webbrowser.open("https://web.whatsapp.com/")
+                if body:
+                    return f"Drafting your WhatsApp message to {contact} now, sir."
+                return f"Opening WhatsApp chat with {contact} on your desktop now, sir. What message shall I send?"
+
+            try:
+                subprocess.Popen(["cmd", "/c", "start", "whatsapp:"], shell=True)
+                return "Accessing WhatsApp Desktop for you now, sir. Bringing your chats onto your screen."
+            except Exception:
+                webbrowser.open("https://web.whatsapp.com/")
+                return "Opening WhatsApp Web in your browser now, sir."
+
+        # 4. App Launcher Controls (Spotify, YouTube, Discord)
+        if any(w in q for w in ["open spotify", "launch spotify", "play spotify", "spotify"]):
+            import subprocess
+            try:
+                subprocess.Popen(["cmd", "/c", "start", "spotify:"], shell=True)
+                return "Launching Spotify on your desktop now, sir."
+            except Exception:
+                webbrowser.open("https://open.spotify.com")
+                return "Opening Spotify Web for you now, sir."
+
+        if any(w in q for w in ["open youtube", "launch youtube", "youtube"]):
+            webbrowser.open("https://youtube.com")
+            return "Opening YouTube in your browser now, sir."
+
+        if any(w in q for w in ["open discord", "launch discord", "discord"]):
+            import subprocess
+            try:
+                subprocess.Popen(["cmd", "/c", "start", "discord:"], shell=True)
+                return "Launching Discord on your desktop now, sir."
+            except Exception:
+                webbrowser.open("https://discord.com/app")
+                return "Opening Discord Web for you now, sir."
+
+        # 5. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
         if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
             cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
