@@ -242,6 +242,21 @@ async def summarize_text(req: SummarizeRequest):
     return {"summary": result}
 
 
+# ─── Distributed Ollama AI Gateway / Relay ──────────────────────────────────
+
+@app.post("/api/generate")
+async def proxy_ollama_generate(payload: dict):
+    """Proxies LLM generation to local Ollama for remote LAN nodes (Thin Client -> AI Server)."""
+    import httpx
+    ollama_url = settings.ollama_base_url.rstrip('/')
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.post(f"{ollama_url}/api/generate", json=payload)
+            return resp.json()
+        except Exception as ex:
+            raise HTTPException(status_code=502, detail=f"Ollama gateway error: {ex}")
+
+
 # ─── iPhone / Mobile Integration ─────────────────────────────────────────────
 
 class CallEventRequest(BaseModel):
