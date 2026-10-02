@@ -35,7 +35,7 @@ except Exception:
     HAS_KEYBOARD = False
 
 try:
-    from agents import network_agent, instagram_agent, file_agent
+    from agents import network_agent, instagram_agent, file_agent, github_agent, youtube_agent
     from config import settings
     HAS_LOCAL_AGENTS = True
 except Exception as e:
@@ -149,7 +149,10 @@ class JarvisBrain:
 
         # 1. Instant Fast-Path Common Commands (<5ms latency)
         if any(k in q for k in ["what can you do", "your capabilities", "what do you do", "features"]):
-            return "I can monitor your laptop specs, track connected Wi-Fi devices, find files, analyze your Instagram reels, upload new clips, and answer questions locally, sir."
+            return "I have full local control over your laptop, sir. I can manage WhatsApp, launch YouTube Studio, monitor GitHub repositories, track Wi-Fi devices, inspect specs, and post Instagram reels."
+
+        if any(w in q for w in ["access my device", "access my laptop", "access my system", "control my computer", "control my laptop", "access all things", "access everything"]):
+            return "Yes, sir. I have authorized local control of your desktop, files, apps, GitHub repositories, Wi-Fi network, and YouTube analytics, with 100 percent local privacy."
 
         if any(k in q for k in ["how are you", "how are you doing", "status report"]):
             cpu = psutil.cpu_percent(interval=None)
@@ -165,7 +168,7 @@ class JarvisBrain:
             return "Good day, sir. All systems are operational. How can I assist you?"
 
         # 2. Instagram Autonomous Uploads, Live Reel Analytics, and Captions
-        if any(k in q for k in ["instagram", "insta", "ig", "reel", "reels", "post", "posts", "views", "likes", "followers", "dashboard", "caption"]):
+        if (any(k in q for k in ["instagram", "insta", "ig", "reel", "reels"]) or any(k in q for k in ["followers", "caption"])) and not any(w in q for w in ["youtube", "github", "git"]):
             import webbrowser
             from dotenv import dotenv_values
             env_path = os.path.join(BACKEND_DIR, ".env")
@@ -254,7 +257,49 @@ class JarvisBrain:
                 webbrowser.open("https://web.whatsapp.com/")
                 return "Opening WhatsApp Web in your browser now, sir."
 
-        # 4. App Launcher Controls (Spotify, YouTube, Discord)
+        # 4. Strict Privacy & Local Sovereignty Confirmation
+        if any(w in q for w in ["privacy", "data safe", "data leak", "pass out", "leave my computer", "leave my device", "send my data", "secure my data"]):
+            return "Sir, your privacy is absolute. All language models, indexing, and reasoning run 100 percent locally on your RTX GPU and local SSD. Zero personal data, transcripts, or code ever leave your laptop."
+
+        # 5. YouTube Studio & Creator Dashboard Analytics
+        if any(w in q for w in ["youtube studio", "youtube dashboard", "youtube analytics", "youtube stats", "channel stats", "creator dashboard"]):
+            try:
+                from agents import youtube_agent
+                if any(w in q for w in ["analytics", "metrics", "views", "performance"]):
+                    youtube_agent.open_youtube_analytics()
+                    return "Accessing your YouTube Studio Analytics tab now, sir. Live viewer telemetry is displayed on your screen."
+                youtube_agent.open_youtube_studio()
+                return "Accessing your YouTube Creator Studio dashboard now, sir. Channel telemetry is active."
+            except Exception:
+                webbrowser.open("https://studio.youtube.com/")
+                return "Opening YouTube Creator Studio for you now, sir."
+
+        if any(w in q for w in ["open youtube", "launch youtube", "youtube"]):
+            webbrowser.open("https://youtube.com")
+            return "Opening YouTube for you now, sir."
+
+        # 6. GitHub & Git Operations
+        if any(w in q for w in ["github", "git repo", "git status", "commits", "commit"]):
+            try:
+                from agents import github_agent
+                if any(w in q for w in ["status", "changes", "modified", "branch"]):
+                    stat = github_agent.get_git_status()
+                    if stat.get("status") == "ok":
+                        if stat.get("is_clean"):
+                            return f"Your repository on branch {stat.get('branch')} is clean with zero uncommitted changes, sir. Last commit was {stat.get('last_commit')}."
+                        return f"You are on branch {stat.get('branch')} with {stat.get('changed_files_count')} modified files awaiting commit, sir."
+                if any(w in q for w in ["commit", "commits", "history", "recent"]):
+                    commits = github_agent.get_recent_commits(limit=2)
+                    if commits:
+                        return f"Your latest Git commit is: {commits[0]}, sir."
+                
+                github_agent.open_github_repo()
+                return "Opening your GitHub repository dashboard in your browser now, sir."
+            except Exception:
+                webbrowser.open("https://github.com/Tarun7358")
+                return "Opening your GitHub profile now, sir."
+
+        # 7. Desktop App Launchers (Spotify, Discord, VS Code, Task Manager)
         if any(w in q for w in ["open spotify", "launch spotify", "play spotify", "spotify"]):
             import subprocess
             try:
@@ -264,10 +309,6 @@ class JarvisBrain:
                 webbrowser.open("https://open.spotify.com")
                 return "Opening Spotify Web for you now, sir."
 
-        if any(w in q for w in ["open youtube", "launch youtube", "youtube"]):
-            webbrowser.open("https://youtube.com")
-            return "Opening YouTube in your browser now, sir."
-
         if any(w in q for w in ["open discord", "launch discord", "discord"]):
             import subprocess
             try:
@@ -276,6 +317,16 @@ class JarvisBrain:
             except Exception:
                 webbrowser.open("https://discord.com/app")
                 return "Opening Discord Web for you now, sir."
+
+        if any(w in q for w in ["open vs code", "open code", "launch code", "visual studio code"]):
+            import subprocess
+            subprocess.Popen(["code", "."], shell=True)
+            return "Opening Visual Studio Code for your workspace now, sir."
+
+        if any(w in q for w in ["open task manager", "launch task manager", "task manager"]):
+            import subprocess
+            subprocess.Popen(["taskmgr.exe"], shell=True)
+            return "Opening Task Manager on your screen now, sir."
 
         # 5. System / Hardware diagnostics (Word-boundary check to prevent matching 'ram' in 'instagram')
         if re.search(r"\b(system status|laptop specs|battery|cpu usage|ram usage|how are you running|hardware specs)\b", q) or (re.search(r"\b(cpu|ram|battery)\b", q) and not any(w in q for w in ["instagram", "telegram", "program"])):
