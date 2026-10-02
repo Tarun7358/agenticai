@@ -15,441 +15,211 @@
 
     :root {
       --cyan: #00f3ff;
-      --cyan-glow: rgba(0, 243, 255, 0.6);
-      --cyan-dim: rgba(0, 243, 255, 0.2);
-      --blue: #0077ff;
-      --blue-glow: rgba(0, 119, 255, 0.5);
+      --cyan-bright: #ffffff;
+      --cyan-glow: rgba(0, 243, 255, 0.7);
+      --cyan-dim: rgba(0, 243, 255, 0.25);
+      --blue-deep: #0066ff;
       --amber: #ffaa00;
-      --amber-glow: rgba(255, 170, 0, 0.6);
-      --bg-glass: rgba(4, 14, 28, 0.88);
-      --border-hud: rgba(0, 243, 255, 0.35);
+      --amber-glow: rgba(255, 170, 0, 0.8);
     }
 
     body {
       background: transparent;
-      color: var(--cyan);
-      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
       overflow: hidden;
       width: 100vw;
       height: 100vh;
       display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* Drag handle area */
-    .drag-zone {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 38px;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      background: linear-gradient(180deg, rgba(0, 243, 255, 0.12) 0%, transparent 100%);
-      cursor: move;
-    }
-
-    .drag-title {
-      font-size: 11px;
-      letter-spacing: 2px;
-      font-weight: 700;
-      color: var(--cyan);
-      text-shadow: 0 0 8px var(--cyan-glow);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .drag-title::before {
-      content: '';
-      display: inline-block;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 8px var(--cyan);
-      animation: blink 2s infinite ease-in-out;
-    }
-
-    .window-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: default;
-    }
-
-    .control-btn {
-      background: rgba(0, 243, 255, 0.1);
-      border: 1px solid var(--border-hud);
-      color: var(--cyan);
-      width: 22px;
-      height: 22px;
-      border-radius: 4px;
-      font-size: 11px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .control-btn:hover {
-      background: var(--cyan);
-      color: #030a16;
-      box-shadow: 0 0 10px var(--cyan);
-    }
-
-    /* Main Container */
-    .hud-wrapper {
-      position: relative;
-      width: 440px;
-      height: 540px;
-      background: var(--bg-glass);
-      border: 1px solid var(--border-hud);
-      border-radius: 20px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      box-shadow: 0 0 35px rgba(0, 243, 255, 0.25), inset 0 0 25px rgba(0, 243, 255, 0.08);
-      display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 44px 18px 18px 18px;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    /* Compact Orb Mode */
-    body.compact-mode .hud-wrapper {
-      width: 140px;
-      height: 140px;
-      border-radius: 50%;
-      padding: 0;
       justify-content: center;
-      background: rgba(3, 11, 22, 0.92);
-      box-shadow: 0 0 25px var(--cyan-glow);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     }
 
-    body.compact-mode .drag-zone,
-    body.compact-mode .telemetry-bar,
-    body.compact-mode .response-card,
-    body.compact-mode .input-bar,
-    body.compact-mode .status-text {
-      display: none !important;
-    }
-
-    body.compact-mode .reactor-box {
-      transform: scale(0.65);
-    }
-
-    /* Corner Sci-Fi Brackets */
-    .hud-wrapper::before,
-    .hud-wrapper::after {
-      content: '';
-      position: absolute;
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--cyan);
-      pointer-events: none;
-    }
-    .hud-wrapper::before {
-      top: 8px;
-      left: 8px;
-      border-right: none;
-      border-bottom: none;
-    }
-    .hud-wrapper::after {
-      bottom: 8px;
-      right: 8px;
-      border-left: none;
-      border-top: none;
-    }
-
-    /* Scanline effect */
-    .scanlines {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(
-        rgba(18, 16, 16, 0) 50%, 
-        rgba(0, 243, 255, 0.025) 50%
-      );
-      background-size: 100% 4px;
-      pointer-events: none;
-      z-index: 10;
-    }
-
-    /* Arc Reactor Section */
-    .reactor-box {
+    /* Entire Arc Reactor is draggable */
+    .jarvis-container {
       position: relative;
-      width: 200px;
-      height: 200px;
+      width: 280px;
+      height: 280px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-top: 4px;
-      cursor: pointer;
+      cursor: grab;
+      filter: drop-shadow(0 0 20px rgba(0, 243, 255, 0.35));
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    /* Outer Ring with Ticks */
-    .outer-ring {
+    .jarvis-container:active {
+      cursor: grabbing;
+      transform: scale(0.98);
+    }
+
+    /* Outermost Dotted Orbital Ring */
+    .ring-outer-dotted {
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      border: 2px dashed rgba(0, 243, 255, 0.35);
+      animation: rotateClockwise 35s linear infinite;
+    }
+
+    /* Segmented Precision Caliper Ring */
+    .ring-caliper {
+      position: absolute;
+      width: 226px;
+      height: 226px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-top-color: var(--cyan);
+      border-bottom-color: var(--cyan);
+      box-shadow: 0 0 15px var(--cyan-glow);
+      animation: rotateCounter 18s linear infinite;
+    }
+
+    /* Degree Ticks Ring */
+    .ring-ticks {
       position: absolute;
       width: 196px;
       height: 196px;
       border-radius: 50%;
-      border: 2px dashed rgba(0, 243, 255, 0.4);
-      animation: rotateClockwise 25s linear infinite;
+      border: 1px dotted rgba(0, 243, 255, 0.5);
+      animation: rotateClockwise 12s linear infinite;
     }
 
-    /* Middle Segmented Ring */
-    .segmented-ring {
+    /* Circular Audio Frequency Waveform Canvas */
+    #visualizerCanvas {
       position: absolute;
-      width: 164px;
-      height: 164px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      border-top-color: var(--cyan);
-      border-bottom-color: var(--cyan);
-      border-left-color: rgba(0, 243, 255, 0.2);
-      border-right-color: rgba(0, 243, 255, 0.2);
-      box-shadow: 0 0 15px var(--cyan-dim);
-      animation: rotateCounter 14s linear infinite;
+      width: 280px;
+      height: 280px;
+      pointer-events: none;
+      z-index: 10;
     }
 
-    /* Triangle Marker Ring */
-    .nodes-ring {
-      position: absolute;
-      width: 132px;
-      height: 132px;
-      border-radius: 50%;
-      border: 1px dotted rgba(0, 243, 255, 0.6);
-      animation: rotateClockwise 8s linear infinite;
-    }
-
-    /* Reactive Arc Reactor Core */
+    /* Inner Holographic Arc Reactor Core */
     .reactor-core {
       position: absolute;
-      width: 90px;
-      height: 90px;
+      width: 110px;
+      height: 110px;
       border-radius: 50%;
-      background: radial-gradient(circle, #ffffff 0%, #00f3ff 45%, rgba(0, 119, 255, 0.3) 75%, transparent 100%);
-      box-shadow: 0 0 25px var(--cyan), 0 0 50px var(--blue-glow);
+      background: radial-gradient(circle, #ffffff 0%, #00f3ff 45%, rgba(0, 102, 255, 0.5) 75%, transparent 100%);
+      box-shadow: 0 0 30px var(--cyan), 0 0 60px var(--cyan-glow);
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.3s ease;
-      animation: corePulse 3s infinite ease-in-out;
-    }
-
-    .reactor-core::after {
-      content: '';
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: #030f1c;
-      border: 2px solid #ffffff;
-      box-shadow: inset 0 0 10px var(--cyan);
-    }
-
-    /* Audio visualizer canvas */
-    #visualizerCanvas {
-      position: absolute;
-      width: 200px;
-      height: 200px;
-      pointer-events: none;
+      transition: all 0.4s ease;
+      animation: coreBreath 3s infinite ease-in-out;
       z-index: 5;
     }
 
-    /* Status indicator */
-    .status-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 10px;
-      font-size: 11px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      font-weight: 700;
-      color: var(--cyan);
-      text-shadow: 0 0 8px var(--cyan-glow);
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
+    /* Center Aperture Hole */
+    .core-center {
+      width: 52px;
+      height: 52px;
       border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 10px var(--cyan);
-    }
-
-    /* Dynamic State Classes */
-    .state-listening .reactor-core {
-      background: radial-gradient(circle, #ffffff 0%, #00f3ff 60%, rgba(0, 243, 255, 0.5) 85%);
-      box-shadow: 0 0 35px var(--cyan), 0 0 70px var(--cyan);
-      animation: coreListen 0.8s infinite alternate ease-in-out;
-    }
-    .state-listening .outer-ring {
-      animation-duration: 6s;
-      border-color: var(--cyan);
-    }
-    .state-listening .status-dot {
-      background: #00ff88;
-      box-shadow: 0 0 12px #00ff88;
-    }
-    .state-listening .status-badge {
-      color: #00ff88;
-      text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
-    }
-
-    .state-thinking .reactor-core {
-      background: radial-gradient(circle, #ffffff 0%, var(--amber) 50%, rgba(255, 170, 0, 0.4) 80%);
-      box-shadow: 0 0 30px var(--amber), 0 0 60px var(--amber-glow);
-      animation: coreSpin 1s infinite linear;
-    }
-    .state-thinking .status-dot {
-      background: var(--amber);
-      box-shadow: 0 0 12px var(--amber);
-    }
-    .state-thinking .status-badge {
-      color: var(--amber);
-      text-shadow: 0 0 10px var(--amber-glow);
-    }
-
-    .state-speaking .reactor-core {
-      animation: coreSpeak 0.4s infinite alternate ease-in-out;
-    }
-
-    /* Response / Dialogue Card */
-    .response-card {
-      width: 100%;
-      min-height: 110px;
-      max-height: 140px;
-      background: rgba(0, 20, 40, 0.6);
-      border: 1px solid rgba(0, 243, 255, 0.25);
-      border-radius: 10px;
-      margin-top: 12px;
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      overflow-y: auto;
-      font-size: 13px;
-      line-height: 1.45;
-      position: relative;
-    }
-
-    .response-card::-webkit-scrollbar {
-      width: 4px;
-    }
-    .response-card::-webkit-scrollbar-thumb {
-      background: var(--cyan-dim);
-      border-radius: 2px;
-    }
-
-    .dialogue-user {
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 11px;
-      letter-spacing: 0.5px;
-      display: flex;
-      gap: 6px;
-    }
-
-    .dialogue-user span {
-      color: var(--amber);
-      font-weight: 700;
-    }
-
-    .dialogue-aura {
-      color: #e2f8ff;
-      font-size: 13px;
-      text-shadow: 0 0 2px rgba(0, 243, 255, 0.4);
-      white-space: pre-wrap;
-    }
-
-    .dialogue-aura strong {
-      color: var(--cyan);
-      font-weight: 700;
-    }
-
-    /* Telemetry Bar */
-    .telemetry-bar {
-      display: flex;
-      justify-content: space-between;
-      width: 100%;
-      margin-top: 10px;
-      padding: 6px 10px;
-      background: rgba(0, 243, 255, 0.05);
-      border: 1px solid rgba(0, 243, 255, 0.15);
-      border-radius: 6px;
-      font-size: 10px;
-      letter-spacing: 1px;
-      color: rgba(0, 243, 255, 0.8);
-    }
-
-    .telemetry-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .telemetry-val {
-      color: #ffffff;
-      font-weight: 600;
-    }
-
-    /* Quick Input Bar */
-    .input-bar {
-      width: 100%;
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .hud-input {
-      flex: 1;
-      background: rgba(0, 20, 40, 0.7);
-      border: 1px solid rgba(0, 243, 255, 0.3);
-      border-radius: 8px;
-      padding: 8px 12px;
-      color: #ffffff;
-      font-size: 12px;
-      outline: none;
-      transition: all 0.2s;
-    }
-
-    .hud-input:focus {
-      border-color: var(--cyan);
-      box-shadow: 0 0 10px rgba(0, 243, 255, 0.4);
-    }
-
-    .hud-input::placeholder {
-      color: rgba(0, 243, 255, 0.4);
-    }
-
-    .mic-btn {
-      background: rgba(0, 243, 255, 0.15);
-      border: 1px solid var(--cyan);
-      color: var(--cyan);
-      padding: 0 14px;
-      border-radius: 8px;
-      cursor: pointer;
+      background: #030c18;
+      border: 2px solid #ffffff;
+      box-shadow: inset 0 0 16px var(--cyan), 0 0 15px rgba(255, 255, 255, 0.8);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
-      transition: all 0.2s;
     }
 
-    .mic-btn:hover {
-      background: var(--cyan);
-      color: #030e1c;
-      box-shadow: 0 0 12px var(--cyan);
+    /* Small Central Sci-Fi Reticle */
+    .reticle {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid var(--cyan);
+      background: rgba(0, 243, 255, 0.3);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* Floating Status Label */
+    .status-hud {
+      position: absolute;
+      bottom: 6px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-transform: uppercase;
+      text-shadow: 0 0 10px var(--cyan-glow);
+      opacity: 0.85;
+      pointer-events: none;
+      transition: all 0.3s;
+    }
+
+    /* Holographic Voice Subtitle (fades in when speaking) */
+    .speech-subtitle {
+      position: absolute;
+      bottom: -46px;
+      max-width: 320px;
+      text-align: center;
+      color: #e6f9ff;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      line-height: 1.35;
+      text-shadow: 0 0 8px rgba(0, 243, 255, 0.7);
+      background: rgba(4, 14, 28, 0.85);
+      border: 1px solid rgba(0, 243, 255, 0.3);
+      padding: 6px 14px;
+      border-radius: 20px;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transform: translateY(6px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .speech-subtitle.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ─── Dynamic State Styles ─── */
+
+    /* LISTENING STATE */
+    body.state-listening .reactor-core {
+      background: radial-gradient(circle, #ffffff 0%, #00f3ff 60%, rgba(0, 243, 255, 0.7) 85%);
+      box-shadow: 0 0 45px #00f3ff, 0 0 80px rgba(0, 243, 255, 0.8);
+      animation: coreListen 0.6s infinite alternate ease-in-out;
+    }
+    body.state-listening .ring-caliper {
+      border-top-color: #00ff88;
+      border-bottom-color: #00ff88;
+      box-shadow: 0 0 25px #00ff88;
+      animation-duration: 6s;
+    }
+    body.state-listening .status-hud {
+      color: #00ff88;
+      text-shadow: 0 0 12px #00ff88;
+    }
+
+    /* THINKING STATE */
+    body.state-thinking .reactor-core {
+      background: radial-gradient(circle, #ffffff 0%, var(--amber) 50%, rgba(255, 170, 0, 0.5) 80%);
+      box-shadow: 0 0 40px var(--amber), 0 0 75px var(--amber-glow);
+      animation: coreSpin 1s infinite linear;
+    }
+    body.state-thinking .ring-caliper {
+      border-top-color: var(--amber);
+      border-bottom-color: var(--amber);
+      box-shadow: 0 0 20px var(--amber);
+      animation-duration: 4s;
+    }
+    body.state-thinking .status-hud {
+      color: var(--amber);
+      text-shadow: 0 0 12px var(--amber-glow);
+    }
+
+    /* SPEAKING STATE */
+    body.state-speaking .reactor-core {
+      animation: coreSpeak 0.35s infinite alternate ease-in-out;
+      box-shadow: 0 0 40px var(--cyan), 0 0 85px var(--cyan-glow);
+    }
+    body.state-speaking .ring-caliper {
+      animation-duration: 8s;
     }
 
     /* Animations */
@@ -463,24 +233,26 @@
       to { transform: rotate(0deg); }
     }
 
-    @keyframes corePulse {
+    @keyframes coreBreath {
       0%, 100% {
-        transform: scale(0.96);
-        box-shadow: 0 0 20px var(--cyan), 0 0 40px var(--blue-glow);
+        transform: scale(0.95);
+        opacity: 0.9;
+        box-shadow: 0 0 25px var(--cyan), 0 0 50px var(--cyan-glow);
       }
       50% {
-        transform: scale(1.05);
-        box-shadow: 0 0 32px var(--cyan), 0 0 65px var(--cyan-glow);
+        transform: scale(1.04);
+        opacity: 1;
+        box-shadow: 0 0 38px var(--cyan), 0 0 75px var(--cyan-glow);
       }
     }
 
     @keyframes coreListen {
       0% { transform: scale(1); filter: brightness(1); }
-      100% { transform: scale(1.14); filter: brightness(1.3); }
+      100% { transform: scale(1.15); filter: brightness(1.3); }
     }
 
     @keyframes coreSpeak {
-      0% { transform: scale(0.98); }
+      0% { transform: scale(0.97); }
       100% { transform: scale(1.18); }
     }
 
@@ -488,68 +260,29 @@
       0% { transform: rotate(0deg) scale(1.02); }
       100% { transform: rotate(360deg) scale(1.02); }
     }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
   </style>
 </head>
 <body class="state-idle">
-  <div class="hud-wrapper">
-    <div class="scanlines"></div>
 
-    <!-- Drag Titlebar -->
-    <div class="drag-zone pywebview-drag-region">
-      <div class="drag-title">AURA // JARVIS HUD</div>
-      <div class="window-controls">
-        <div class="control-btn" id="compactBtn" title="Toggle Mini Orb Mode">⊙</div>
-        <div class="control-btn" id="closeBtn" title="Minimize / Hide">✕</div>
+  <div class="jarvis-container pywebview-drag-region" id="jarvisCore" title="Click to talk / Say 'Hey Aura'">
+    <canvas id="visualizerCanvas" width="280" height="280"></canvas>
+    
+    <div class="ring-outer-dotted"></div>
+    <div class="ring-caliper"></div>
+    <div class="ring-ticks"></div>
+    
+    <div class="reactor-core">
+      <div class="core-center">
+        <div class="reticle"></div>
       </div>
     </div>
 
-    <!-- Arc Reactor Core Visual -->
-    <div class="reactor-box" id="reactorCore" title="Click to Talk / Activate">
-      <canvas id="visualizerCanvas" width="200" height="200"></canvas>
-      <div class="outer-ring"></div>
-      <div class="segmented-ring"></div>
-      <div class="nodes-ring"></div>
-      <div class="reactor-core"></div>
-    </div>
-
-    <!-- Status Badge -->
-    <div class="status-badge" id="statusBadge">
-      <div class="status-dot"></div>
-      <span id="statusText">AURA STANDBY // SAY "HEY AURA"</span>
-    </div>
-
-    <!-- Telemetry -->
-    <div class="telemetry-bar">
-      <div class="telemetry-item">GPU: <span class="telemetry-val">RTX 2050</span></div>
-      <div class="telemetry-item">RAM: <span class="telemetry-val">8GB</span></div>
-      <div class="telemetry-item">CPU: <span class="telemetry-val" id="cpuVal">--%</span></div>
-      <div class="telemetry-item">AI: <span class="telemetry-val" id="aiVal">LOCAL</span></div>
-    </div>
-
-    <!-- Dialogue / Stream Card -->
-    <div class="response-card" id="responseCard">
-      <div class="dialogue-user" id="userSpeech" style="display: none;">
-        <span>YOU:</span> <span id="userSpeechText">...</span>
-      </div>
-      <div class="dialogue-aura" id="auraResponse">
-        <strong>AURA:</strong> Good evening, sir. I am online and monitoring your system, files, and network. Say <strong>"Hey Aura"</strong> or click the core.
-      </div>
-    </div>
-
-    <!-- Quick Input Bar -->
-    <div class="input-bar">
-      <input type="text" class="hud-input" id="textInput" placeholder="Ask AURA anything (or say 'Hey Aura')..." />
-      <button class="mic-btn" id="micBtn" title="Speak to AURA">🎤</button>
-    </div>
+    <div class="status-hud" id="statusText">JARVIS ONLINE</div>
+    <div class="speech-subtitle" id="speechSubtitle">"Yes sir, how can I help?"</div>
   </div>
 
   <script>
-    // ─── Web Audio Jarvis SFX Synthesizer ──────────────────────────────────────
+    // ─── Web Audio Synthesizer for Authentic Jarvis Chimes ────────────────────
     class JarvisSFX {
       constructor() {
         this.ctx = null;
@@ -569,15 +302,15 @@
           const gain = this.ctx.createGain();
 
           osc1.type = 'sine';
-          osc1.frequency.setValueAtTime(440, this.ctx.currentTime);
-          osc1.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.15);
+          osc1.frequency.setValueAtTime(520, this.ctx.currentTime);
+          osc1.frequency.exponentialRampToValueAtTime(1040, this.ctx.currentTime + 0.16);
 
           osc2.type = 'triangle';
-          osc2.frequency.setValueAtTime(660, this.ctx.currentTime);
-          osc2.frequency.exponentialRampToValueAtTime(1320, this.ctx.currentTime + 0.18);
+          osc2.frequency.setValueAtTime(780, this.ctx.currentTime);
+          osc2.frequency.exponentialRampToValueAtTime(1560, this.ctx.currentTime + 0.19);
 
-          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+          gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.28);
 
           osc1.connect(gain);
           osc2.connect(gain);
@@ -585,11 +318,9 @@
 
           osc1.start();
           osc2.start();
-          osc1.stop(this.ctx.currentTime + 0.25);
-          osc2.stop(this.ctx.currentTime + 0.25);
-        } catch (e) {
-          console.warn('SFX error:', e);
-        }
+          osc1.stop(this.ctx.currentTime + 0.28);
+          osc2.stop(this.ctx.currentTime + 0.28);
+        } catch (e) {}
       }
       playAcknowledge() {
         try {
@@ -599,23 +330,23 @@
           const gain = this.ctx.createGain();
           osc.type = 'sine';
           osc.frequency.setValueAtTime(880, this.ctx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(1760, this.ctx.currentTime + 0.12);
-          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+          osc.frequency.exponentialRampToValueAtTime(1760, this.ctx.currentTime + 0.14);
+          gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start();
-          osc.stop(this.ctx.currentTime + 0.15);
+          osc.stop(this.ctx.currentTime + 0.18);
         } catch (e) {}
       }
     }
 
     const sfx = new JarvisSFX();
 
-    // ─── Circular Audio Waveform Visualizer ────────────────────────────────────
+    // ─── Circular Holographic Waveform Visualizer ─────────────────────────────
     const canvas = document.getElementById('visualizerCanvas');
     const ctx = canvas.getContext('2d');
-    let waveAmplitude = 8;
+    let waveAmplitude = 6;
     let wavePhase = 0;
     let isSpeaking = false;
 
@@ -623,21 +354,21 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
-      const radius = 68;
-      const bars = 48;
+      const radius = 72;
+      const bars = 56;
 
       ctx.beginPath();
       for (let i = 0; i < bars; i++) {
         const angle = (i / bars) * Math.PI * 2;
-        let barHeight = Math.sin(angle * 6 + wavePhase) * waveAmplitude;
+        let barHeight = Math.sin(angle * 7 + wavePhase) * waveAmplitude;
         if (isSpeaking) {
-          barHeight += (Math.random() * 12 + 4);
+          barHeight += (Math.random() * 16 + 6);
         } else if (document.body.classList.contains('state-listening')) {
-          barHeight += (Math.random() * 8 + 3);
+          barHeight += (Math.random() * 10 + 4);
         }
 
         const r1 = radius;
-        const r2 = radius + Math.max(2, barHeight);
+        const r2 = radius + Math.max(3, barHeight);
 
         const x1 = cx + Math.cos(angle) * r1;
         const y1 = cy + Math.sin(angle) * r1;
@@ -649,27 +380,20 @@
       }
 
       ctx.strokeStyle = document.body.classList.contains('state-thinking') ? '#ffaa00' : '#00f3ff';
-      ctx.lineWidth = 2;
-      ctx.shadowBlur = 10;
+      ctx.lineWidth = 2.5;
+      ctx.shadowBlur = 12;
       ctx.shadowColor = ctx.strokeStyle;
       ctx.stroke();
 
-      wavePhase += 0.05;
+      wavePhase += 0.06;
       requestAnimationFrame(drawVisualizer);
     }
     requestAnimationFrame(drawVisualizer);
 
-    // ─── UI State Management ──────────────────────────────────────────────────
+    // ─── States & Subtitle ───────────────────────────────────────────────────
     const statusText = document.getElementById('statusText');
-    const userSpeech = document.getElementById('userSpeech');
-    const userSpeechText = document.getElementById('userSpeechText');
-    const auraResponse = document.getElementById('auraResponse');
-    const textInput = document.getElementById('textInput');
-    const micBtn = document.getElementById('micBtn');
-    const reactorCore = document.getElementById('reactorCore');
-    const compactBtn = document.getElementById('compactBtn');
-    const closeBtn = document.getElementById('closeBtn');
-    const cpuVal = document.getElementById('cpuVal');
+    const speechSubtitle = document.getElementById('speechSubtitle');
+    let subtitleTimeout = null;
 
     function setState(state, message) {
       document.body.className = `state-${state}`;
@@ -678,7 +402,7 @@
       }
       if (state === 'speaking') {
         isSpeaking = true;
-        waveAmplitude = 18;
+        waveAmplitude = 20;
       } else if (state === 'listening') {
         isSpeaking = false;
         waveAmplitude = 14;
@@ -698,67 +422,24 @@
       setState(state, message);
     };
 
-    window.onUserSpoke = function(text) {
-      userSpeech.style.display = 'flex';
-      userSpeechText.innerText = text;
-    };
-
     window.onAuraResponse = function(text) {
-      auraResponse.innerHTML = `<strong>AURA:</strong> ${text}`;
-      const card = document.getElementById('responseCard');
-      card.scrollTop = card.scrollHeight;
+      if (text) {
+        speechSubtitle.innerText = `"${text}"`;
+        speechSubtitle.classList.add('visible');
+        if (subtitleTimeout) clearTimeout(subtitleTimeout);
+        subtitleTimeout = setTimeout(() => {
+          speechSubtitle.classList.remove('visible');
+        }, 8000);
+      }
     };
 
-    window.setTelemetry = function(cpu, ram, gpu) {
-      if (cpu) cpuVal.innerText = cpu + '%';
-    };
-
-    // ─── User Interactions ───────────────────────────────────────────────────
-    function triggerVoice() {
+    // Click on Arc Reactor to trigger manual voice input
+    document.getElementById('jarvisCore').addEventListener('click', () => {
       sfx.init();
-      setState('listening', 'LISTENING... SPEAK NOW');
+      setState('listening', 'LISTENING...');
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.listen_voice();
       }
-    }
-
-    function sendText() {
-      const q = textInput.value.trim();
-      if (!q) return;
-      sfx.init();
-      textInput.value = '';
-      window.onUserSpoke(q);
-      setState('thinking', 'ANALYZING QUERY...');
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.ask_query(q);
-      }
-    }
-
-    reactorCore.addEventListener('click', triggerVoice);
-    micBtn.addEventListener('click', triggerVoice);
-
-    textInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        sendText();
-      }
-    });
-
-    compactBtn.addEventListener('click', () => {
-      document.body.classList.toggle('compact-mode');
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.toggle_compact(document.body.classList.contains('compact-mode'));
-      }
-    });
-
-    closeBtn.addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.hide_window();
-      }
-    });
-
-    // Notify backend on loaded
-    window.addEventListener('pywebviewready', () => {
-      console.log('PyWebView Ready');
     });
   </script>
 </body>

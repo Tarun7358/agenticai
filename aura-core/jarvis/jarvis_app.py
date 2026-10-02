@@ -1,10 +1,10 @@
 """
-AURA JARVIS HUD — Desktop Floating Agentic AI
-- Iron Man Jarvis Hologram Visuals
-- Background 'Hey Aura' / 'Jarvis' Wake-Word Listener
-- Voice Response (pyttsx3) + Speech Recognition
-- Global Hotkey (Ctrl+Shift+A / Alt+Space)
-- Local System, Network, File & Instagram Agent Integration
+AURA JARVIS HUD — Pure Iron Man Arc Reactor Voice Assistant
+- Holographic Arc Reactor Visual (Pure HUD, No Chatbot Clutter)
+- Always-On Background Wake-Word ("Hey Aura" / "Jarvis")
+- Real-time Speech Recognition + Spoken Human-like Assistant Dialogue
+- Offline Zero-Latency Voice Engine (pyttsx3)
+- Instant System, Network, and File Intelligence
 """
 
 import os
@@ -14,9 +14,7 @@ import json
 import threading
 import datetime
 import re
-import queue
 
-# Ensure backend folder is on python path for importing agents
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(BASE_DIR, "backend")
 if BACKEND_DIR not in sys.path:
@@ -34,20 +32,25 @@ try:
 except Exception:
     HAS_KEYBOARD = False
 
-# Try importing backend agents directly if available
 try:
     from agents import network_agent, instagram_agent, file_agent
     from config import settings
     HAS_LOCAL_AGENTS = True
 except Exception as e:
     HAS_LOCAL_AGENTS = False
-    print(f"[Jarvis] Local agents import notice: {e}")
 
-WAKE_WORDS = ["hey aura", "aura", "jarvis", "ok aura", "hello aura", "wake up aura"]
+WAKE_WORDS = ["hey aura", "aura", "jarvis", "hey jarvis", "ok aura", "hello aura"]
+
+JARVIS_SYSTEM_PROMPT = (
+    "You are JARVIS (AURA), an ultra-intelligent, articulate, polite personal assistant. "
+    "Respond naturally like a real human assistant speaking directly to your boss ('Sir'). "
+    "Keep answers concise in 1 to 2 spoken sentences. "
+    "Do NOT use markdown, bullet points, asterisks, or robotic formatting."
+)
 
 
 class JarvisVoice:
-    """Offline, fast Text-To-Speech engine using pyttsx3."""
+    """Offline, human-like voice synthesis using pyttsx3."""
     def __init__(self):
         self._lock = threading.Lock()
         self.engine = None
@@ -56,17 +59,15 @@ class JarvisVoice:
     def _init_engine(self):
         try:
             self.engine = pyttsx3.init()
-            self.engine.setProperty('rate', 185)
+            self.engine.setProperty('rate', 178)  # Natural human speech cadence
             self.engine.setProperty('volume', 1.0)
             voices = self.engine.getProperty('voices')
-            # Prefer male / David or clear voice for Jarvis style
             for v in voices:
                 if "david" in v.name.lower() or "zira" in v.name.lower():
                     self.engine.setProperty('voice', v.id)
                     break
         except Exception as e:
-            print(f"[Voice] TTS init error: {e}")
-            self.engine = None
+            print(f"[Voice] Init error: {e}")
 
     def speak(self, text: str, on_start=None, on_end=None):
         def _run():
@@ -74,12 +75,10 @@ class JarvisVoice:
                 if on_start:
                     on_start()
                 try:
-                    # Clean text from markdown asterisks or code formatting
                     clean = re.sub(r'[*_#`]', '', text)
                     clean = re.sub(r'\[.*?\]\(.*?\)', '', clean)
-                    # Re-init engine per thread if needed on Windows
                     eng = pyttsx3.init()
-                    eng.setProperty('rate', 185)
+                    eng.setProperty('rate', 178)
                     eng.setProperty('volume', 1.0)
                     eng.say(clean)
                     eng.runAndWait()
@@ -94,105 +93,82 @@ class JarvisVoice:
         t.start()
 
 
-class AuraBrain:
-    """Handles query routing: System telemetry, Local Agents, or Ollama AI."""
-    
-    @staticmethod
-    def get_system_telemetry():
-        cpu = psutil.cpu_percent(interval=None)
-        ram = psutil.virtual_memory().percent
-        battery = psutil.sensors_battery()
-        bat_str = f"{battery.percent}%" if battery else "AC Connected"
-        return {
-            "cpu": cpu,
-            "ram": ram,
-            "gpu": "RTX 2050",
-            "battery": bat_str
-        }
+class JarvisBrain:
+    """Intelligent query reasoning: System, Network, Files, or Ollama AI."""
 
     @staticmethod
     def answer_query(query: str) -> str:
         q = query.lower().strip()
 
-        # 1. Identity / Status
+        # 1. Identity & Greetings
         if any(k in q for k in ["who are you", "your name", "what are you"]):
-            return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX 2050 graphics card and 8GB RAM."
+            return "I am AURA, your personal Jarvis AI. Running locally on your laptop with your RTX graphics card. At your service, sir."
 
-        if any(k in q for k in ["system status", "system stats", "battery", "cpu", "ram", "specs"]):
-            stats = AuraBrain.get_system_telemetry()
-            return f"System telemetry: CPU load is at {stats['cpu']}%, RAM usage is at {stats['ram']}%, GPU RTX 2050 is active, power status is {stats['battery']}."
+        if any(k == q for k in ["hello", "hi", "hey", "good morning", "good evening"]):
+            return "Good day, sir. All systems are operational. How can I assist you?"
 
-        if any(k in q for k in ["what time", "current time", "date today"]):
+        # 2. System / Hardware diagnostics
+        if any(k in q for k in ["system status", "laptop", "battery", "cpu", "ram", "specs", "how are you running"]):
+            cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory().percent
+            battery = psutil.sensors_battery()
+            bat_str = f"battery is at {battery.percent} percent" if battery else "plugged into AC power"
+            return f"All systems nominal, sir. Your CPU is at {cpu} percent, memory is at {ram} percent, and the system is {bat_str}."
+
+        # 3. Time / Date
+        if any(k in q for k in ["time", "what time", "date today"]):
             now = datetime.datetime.now()
-            return f"The current time is {now.strftime('%I:%M %p')} on {now.strftime('%A, %B %d, %Y')}."
+            return f"It is currently {now.strftime('%I:%M %p')} on {now.strftime('%A, %B %d')}."
 
-        # 2. Local Network check
-        if any(k in q for k in ["network", "devices on wifi", "who is on my wifi", "scan network"]):
+        # 4. Local Network & Wi-Fi Check
+        if any(k in q for k in ["network", "wifi", "devices", "who is on my wifi", "scan"]):
             if HAS_LOCAL_AGENTS:
                 try:
                     devices = network_agent.get_all_devices()
                     count = len(devices)
                     new_devs = [d for d in devices if d.get("is_new")]
                     if new_devs:
-                        return f"Network scan completed. Found {count} connected devices. Alert: {len(new_devs)} unknown device detected on your Wi-Fi."
-                    return f"Network scan completed. {count} active devices recognized on your subnet. Everything is secure."
-                except Exception as e:
-                    return f"Scanning your network now. Check the network log for details."
-            return "Scanning network. Your subnet scan is active."
+                        return f"Scan complete, sir. There are {count} devices connected, and I noticed {len(new_devs)} new device on your Wi-Fi."
+                    return f"Your network is secure, sir. {count} authorized devices are active on your subnet."
+                except Exception:
+                    pass
+            return "Scanning your local network now, sir. Monitoring all connected Wi-Fi devices."
 
-        # 3. Instagram check
-        if any(k in q for k in ["instagram", "followers", "insta analytics"]):
+        # 5. Local File Search
+        if "find" in q or "search" in q or "where is" in q:
+            term = q.replace("find", "").replace("search", "").replace("where is", "").replace("file", "").strip()
+            if term and HAS_LOCAL_AGENTS:
+                try:
+                    matches = file_agent.search_files(term, limit=1)
+                    if matches:
+                        top = matches[0]
+                        return f"I found that file for you, sir: {top.get('name')} in your {os.path.basename(os.path.dirname(top.get('path', '')))} folder."
+                    return f"I could not locate any files matching {term} in your indexed folders, sir."
+                except Exception:
+                    pass
+
+        # 6. Instagram Status
+        if "instagram" in q:
             if HAS_LOCAL_AGENTS:
                 try:
                     summary = instagram_agent.get_analytics_summary()
                     if summary.get("connected"):
-                        return f"Instagram analytics: Account has {summary.get('followers', 0)} followers, {summary.get('posts', 0)} posts. Recent engagement is steady."
-                    return "Instagram is configured in your .env file. Run a sync to fetch your latest follower and post insights."
+                        return f"Your Instagram account currently has {summary.get('followers', 0)} followers with {summary.get('posts', 0)} posts."
                 except Exception:
                     pass
-            return "Instagram module is loaded. I can track your follower counts, engagement, and post stats."
+            return "Your Instagram monitor is initialized, sir. Ready to analyze recent engagement whenever you require."
 
-        # 4. File search
-        if q.startswith("find file") or q.startswith("search file") or "where is" in q:
-            search_term = q.replace("find file", "").replace("search file", "").replace("where is", "").strip()
-            if search_term and HAS_LOCAL_AGENTS:
-                try:
-                    matches = file_agent.search_files(search_term, limit=3)
-                    if matches:
-                        top = matches[0]
-                        return f"Found file: {top.get('name')} in {top.get('path')}."
-                    return f"No local files matching '{search_term}' found in your watched folders."
-                except Exception:
-                    pass
-
-        # 5. Query Ollama AI brain if online
-        try:
-            resp = requests.post(
-                "http://127.0.0.1:8000/api/chat/stream",
-                json={"message": query},
-                timeout=25,
-                stream=True
-            )
-            if resp.status_code == 200:
-                full_text = ""
-                for line in resp.iter_lines():
-                    if line:
-                        decoded = line.decode('utf-8')
-                        if decoded.startswith("data: "):
-                            token = decoded[6:]
-                            if token != "[DONE]":
-                                full_text += token
-                if full_text.strip():
-                    return full_text.strip()
-        except Exception:
-            pass
-
-        # Direct Ollama fallback if backend API is not up
+        # 7. Conversational Query via Ollama Local LLM
         try:
             resp = requests.post(
                 "http://localhost:11434/api/generate",
-                json={"model": "mistral", "prompt": f"You are Jarvis/AURA personal AI. Answer concisely in 1-2 sentences: {query}", "stream": False},
-                timeout=15
+                json={
+                    "model": "mistral",
+                    "prompt": f"{JARVIS_SYSTEM_PROMPT}\n\nUser: {query}\nJARVIS:",
+                    "stream": False,
+                    "options": {"temperature": 0.6, "num_ctx": 2048}
+                },
+                timeout=20
             )
             if resp.status_code == 200:
                 answer = resp.json().get("response", "").strip()
@@ -201,11 +177,11 @@ class AuraBrain:
         except Exception:
             pass
 
-        # Fallback response
-        return f"Acknowledged, sir. I have processed '{query}'. All background monitors remain active."
+        # Graceful assistant fallback
+        return f"Right away, sir. I have registered your request for '{query}'. All background watchers remain active."
 
 
-class JarvisHUDApp:
+class JarvisApp:
     def __init__(self):
         self.window = None
         self.voice = JarvisVoice()
@@ -214,98 +190,68 @@ class JarvisHUDApp:
         self.recognizer.energy_threshold = 300
         self.is_listening = False
         self.is_processing = False
-        self.hud_visible = True
-        self.is_compact = False
 
-    # ─── JS Exposed API ───────────────────────────────────────────────────────
     def listen_voice(self):
-        """Called when user clicks mic or reactor core on HUD."""
         threading.Thread(target=self._listen_and_respond, daemon=True).start()
 
-    def ask_query(self, query: str):
-        """Called when user submits text via HUD input."""
-        threading.Thread(target=self._process_query, args=(query,), daemon=True).start()
-
-    def toggle_compact(self, is_compact: bool):
-        self.is_compact = is_compact
-        if self.window:
-            if is_compact:
-                self.window.resize(160, 160)
-            else:
-                self.window.resize(440, 540)
-
-    def hide_window(self):
-        if self.window:
-            self.window.hide()
-            self.hud_visible = False
-
-    def show_window(self):
-        if self.window:
-            self.window.show()
-            self.hud_visible = True
-
-    # ─── Voice Interaction ────────────────────────────────────────────────────
     def _listen_and_respond(self):
         if self.is_listening or self.is_processing:
             return
         self.is_listening = True
-        
+
         try:
-            self._eval_js("setAuraState('listening', 'LISTENING... SPEAK NOW')")
+            self._eval_js("setAuraState('listening', 'LISTENING...')")
             with sr.Microphone() as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.6)
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 audio = self.recognizer.listen(source, timeout=6, phrase_time_limit=10)
-            
-            self._eval_js("setAuraState('thinking', 'PROCESSING SPEECH...')")
+
+            self._eval_js("setAuraState('thinking', 'PROCESSING...')")
             try:
                 text = self.recognizer.recognize_google(audio)
-            except sr.UnknownValueError:
-                text = ""
-            except Exception as e:
+            except Exception:
                 text = ""
 
             if text:
-                self._eval_js(f"onUserSpoke({json.dumps(text)})")
+                print(f"[Jarvis] Heard: '{text}'")
                 self._process_query(text)
             else:
-                self._eval_js("setAuraState('idle', 'AURA STANDBY // SAY \"HEY AURA\"')")
-                self._eval_js("onAuraResponse('I did not catch that, sir.')")
-                self.voice.speak("I didn't catch that, sir.")
+                self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
+                self.voice.speak("I am here whenever you need me, sir.")
         except Exception as e:
-            print(f"[HUD] Listen error: {e}")
-            self._eval_js("setAuraState('idle', 'AURA STANDBY // SAY \"HEY AURA\"')")
+            print(f"[Jarvis] Listen error: {e}")
+            self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
         finally:
             self.is_listening = False
 
     def _process_query(self, query: str):
         self.is_processing = True
-        self._eval_js("setAuraState('thinking', 'ANALYZING...')")
-        
-        response_text = AuraBrain.answer_query(query)
-        
-        self._eval_js(f"onAuraResponse({json.dumps(response_text)})")
-        self._eval_js("setAuraState('speaking', 'SPEAKING RESPONSE')")
-        
+        self._eval_js("setAuraState('thinking', 'THINKING...')")
+
+        response = JarvisBrain.answer_query(query)
+        print(f"[Jarvis] Responding: '{response}'")
+
+        self._eval_js(f"onAuraResponse({json.dumps(response)})")
+        self._eval_js("setAuraState('speaking', 'SPEAKING...')")
+
         def on_done():
             self.is_processing = False
-            self._eval_js("setAuraState('idle', 'AURA STANDBY // SAY \"HEY AURA\"')")
-            
-        self.voice.speak(response_text, on_end=on_done)
+            self._eval_js("setAuraState('idle', 'JARVIS ONLINE')")
 
-    def _eval_js(self, js_code: str):
+        self.voice.speak(response, on_end=on_done)
+
+    def _eval_js(self, js: str):
         if self.window:
             try:
-                self.window.evaluate_js(js_code)
+                self.window.evaluate_js(js)
             except Exception:
                 pass
 
-    # ─── Background Wake Word Listener ────────────────────────────────────────
-    def start_wake_word_listener(self):
+    def start_wake_word_loop(self):
         def _loop():
             rec = sr.Recognizer()
             rec.dynamic_energy_threshold = True
-            rec.pause_threshold = 0.6
-            
+            rec.pause_threshold = 0.5
+
             while True:
                 if self.is_listening or self.is_processing:
                     time.sleep(0.5)
@@ -314,82 +260,53 @@ class JarvisHUDApp:
                 try:
                     with sr.Microphone() as source:
                         audio = rec.listen(source, timeout=3, phrase_time_limit=4)
-                    
+
                     try:
-                        text = rec.recognize_google(audio).lower()
+                        spoken = rec.recognize_google(audio).lower()
                     except Exception:
                         continue
 
-                    # Check for wake words
                     for w in WAKE_WORDS:
-                        if w in text:
-                            print(f"[WakeWord] Triggered: '{text}'")
-                            # Bring window to front
-                            self.show_window()
-                            
-                            # Extract query if user said "Hey Aura, what time is it"
-                            remaining = text.replace(w, "").strip()
-                            if len(remaining) > 3:
-                                self._eval_js(f"onUserSpoke({json.dumps(remaining)})")
-                                threading.Thread(target=self._process_query, args=(remaining,), daemon=True).start()
+                        if w in spoken:
+                            print(f"[WakeWord] Activated: '{spoken}'")
+                            trailing = spoken.replace(w, "").strip()
+                            if len(trailing) > 3:
+                                threading.Thread(target=self._process_query, args=(trailing,), daemon=True).start()
                             else:
                                 threading.Thread(target=self._listen_and_respond, daemon=True).start()
                             break
 
                 except sr.WaitTimeoutError:
                     continue
-                except Exception as ex:
+                except Exception:
                     time.sleep(1)
 
         t = threading.Thread(target=_loop, daemon=True)
         t.start()
 
-    # ─── Telemetry Loop ───────────────────────────────────────────────────────
-    def start_telemetry_loop(self):
-        def _loop():
-            while True:
-                try:
-                    stats = AuraBrain.get_system_telemetry()
-                    self._eval_js(f"setTelemetry('{stats['cpu']}', '{stats['ram']}', '{stats['gpu']}')")
-                except Exception:
-                    pass
-                time.sleep(3)
-
-        t = threading.Thread(target=_loop, daemon=True)
-        t.start()
-
-    # ─── Global Hotkey ────────────────────────────────────────────────────────
     def setup_hotkeys(self):
         if not HAS_KEYBOARD:
             return
         try:
-            def toggle():
-                if self.hud_visible:
-                    self.listen_voice()
-                else:
-                    self.show_window()
-                    self.listen_voice()
-
-            keyboard.add_hotkey("ctrl+shift+a", toggle)
-            keyboard.add_hotkey("alt+space", toggle)
-            print("[Jarvis] Global hotkeys active: Ctrl+Shift+A & Alt+Space")
-        except Exception as e:
-            print(f"[Jarvis] Hotkey setup note: {e}")
+            keyboard.add_hotkey("ctrl+shift+a", self.listen_voice)
+            keyboard.add_hotkey("alt+space", self.listen_voice)
+        except Exception:
+            pass
 
 
-def launch_jarvis():
-    app = JarvisHUDApp()
-    
-    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud.html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
+def main():
+    app = JarvisApp()
 
-    # Create frameless, transparent, floating HUD window
+    html_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud.html")
+    with open(html_file, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Sleek floating circular HUD window (320x340 px)
     window = webview.create_window(
         'AURA JARVIS HUD',
-        html=html_content,
-        width=440,
-        height=540,
+        html=html,
+        width=320,
+        height=340,
         frameless=True,
         easy_drag=True,
         on_top=True,
@@ -398,21 +315,16 @@ def launch_jarvis():
     )
     app.window = window
 
-    # Start background threads
-    app.start_wake_word_listener()
-    app.start_telemetry_loop()
+    app.start_wake_word_loop()
     app.setup_hotkeys()
 
-    # Welcome voice greeting
-    def welcome():
-        time.sleep(1.2)
-        app.voice.speak("AURA online. Systems nominal. Good evening, sir.")
+    def greet():
+        time.sleep(1)
+        app.voice.speak("Jarvis online. Systems nominal, sir.")
 
-    threading.Thread(target=welcome, daemon=True).start()
-
-    # Run pywebview main loop
+    threading.Thread(target=greet, daemon=True).start()
     webview.start()
 
 
 if __name__ == "__main__":
-    launch_jarvis()
+    main()
